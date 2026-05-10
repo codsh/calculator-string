@@ -1426,14 +1426,6 @@ def key_calc(key, just_from_added_win=False):
             else:
                 if (i_got_pattern := re.match(fr'\s*(?:\S|$)', example_value[cursor_index:])):
                     cursor_index += len(i_got_pattern[0])
-        # elif keysym in ('Left', 'Right'):
-        #     for i in range(4, 1, -1):
-        #         if (example_value[cursor_index:cursor_index + i], example_value[cursor_index - i:cursor_index])[keysym == 'Left'] in (united_symbols + united_symbols_with_scopes):
-        #             cursor_index += (i, -i)[keysym == 'Left']
-        #             break
-        #     else:
-        #         cursor_index += (1, -1)[keysym == 'Left']
-        #     add_to_last_examples_if_selection_or_cursor_change()
         elif keysym not in special_keys:
             example_value = insert_in_example(example_value, f'{keysym}')
         if not (keysym.isdigit() or keysym in ('minus', 'BackSpace', 'Delete')) and ('q' in example_value and keysym != 'q' or example_value.count('q') ==  2):
