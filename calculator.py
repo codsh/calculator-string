@@ -151,12 +151,11 @@ with open(f'{FILES}/settings.json', 'r') as settings_file:
         settings = {'y': MAX_COORD, 'x': 0, 'history length': 4000, 'theme': ('dark', 'light')[not is_dark_theme()], 'scale': 3, 'round': 'по умолчанию'}
         rewrite_json('settings')
 if recents['rounding info longer'] == 0:
-    recents['rounding info longer'] = (time.time() - recents['closing time'][-1] > 14 * DAY) * 2
+    recents['rounding info longer'] = (time.time() - recents['closing time'][-1] > 28 * DAY) * 2
 if time.time() - recents['closing time'][-3] < 14 * DAY:
     create_greeting()
     
 ROUND_ANSWER_TO_MANUALLY = settings['round']
-
 
 getcontext().prec = 1402
 # Временная штука для программы работы без ошибки
@@ -192,40 +191,40 @@ def is_num(symbols, num_symbs=list('0123456789.-Ee+')):
 #     example_value = insert_in_example(example_value, '|', right=True)
     
     
-def find_the_most_useful_symbol_to_paste(example, last_is_digit, first=True):
-    often_meeting_parts = []
-    for i in range(len(example) - 2):
-        if (example[i] in '0123456789πφe.' and last_is_digit or example[i] not in '0123456789πφe.' and (not last_is_digit)):
-            continue
-        for j in range(i + 2, len(example) + 1):
-            if example.count(example[i:j]) < 2 or example[j - 1] in '0123456789πφe.' or not re.search(r'[0-9πφe]', example[i:j]):
-                continue
-            often_meeting_parts.append(example[i:j])
-    for i in range(len(often_meeting_parts)):
-        for j in range(len(often_meeting_parts)):
-            if often_meeting_parts[i] in often_meeting_parts[j] and i != j and example.replace(often_meeting_parts[j], '').count(often_meeting_parts[i]) < 2:
-                often_meeting_parts[i] = ''
-    often_meeting_parts = sorted(often_meeting_parts, key=lambda x: len(x), reverse=True)
-    if often_meeting_parts:
-        return often_meeting_parts[0 if len(often_meeting_parts) < 2 or first else 1]
-    else:
-        number_expression = r'-?(?:[0-9]+(?:\.[0-9]+)?|[πφe])'
-        example_numbers = list(re.finditer(fr'{number_expression}|\({number_expression}\)|\|{number_expression}\|', example))
-        if len(example_numbers) > 1:
-            the_often_meeting_part = example[example_numbers[0].end():example_numbers[-1].start()]
-            for right_index in range(len(the_often_meeting_part)):
-                part_of_the_often_meeting_part = the_often_meeting_part[:right_index]
-                if part_of_the_often_meeting_part.count('(') < part_of_the_often_meeting_part.count(')'):
-                    the_often_meeting_part = '#' * right_index + the_often_meeting_part[right_index:]
-            the_often_meeting_part = the_often_meeting_part.replace('#', '')
-            if the_often_meeting_part[:1] not in '0123456789πφe.' and not last_is_digit:
-                the_often_meeting_part = the_often_meeting_part[list(re.finditer(r'[0-9πφe.]', the_often_meeting_part))[0].start():]
-            if re.search(r'[0-9πφe]', the_often_meeting_part):
-                return the_often_meeting_part
-            else:
-                return ''
-        else:
-            return ''
+# def find_the_most_useful_symbol_to_paste(example, last_is_digit, first=True):
+#     often_meeting_parts = []
+#     for i in range(len(example) - 2):
+#         if (example[i] in '0123456789πφe.' and last_is_digit or example[i] not in '0123456789πφe.' and (not last_is_digit)):
+#             continue
+#         for j in range(i + 2, len(example) + 1):
+#             if example.count(example[i:j]) < 2 or example[j - 1] in '0123456789πφe.' or not re.search(r'[0-9πφe]', example[i:j]):
+#                 continue
+#             often_meeting_parts.append(example[i:j])
+#     for i in range(len(often_meeting_parts)):
+#         for j in range(len(often_meeting_parts)):
+#             if often_meeting_parts[i] in often_meeting_parts[j] and i != j and example.replace(often_meeting_parts[j], '').count(often_meeting_parts[i]) < 2:
+#                 often_meeting_parts[i] = ''
+#     often_meeting_parts = sorted(often_meeting_parts, key=lambda x: len(x), reverse=True)
+#     if often_meeting_parts:
+#         return often_meeting_parts[0 if len(often_meeting_parts) < 2 or first else 1]
+#     else:
+#         number_expression = r'-?(?:[0-9]+(?:\.[0-9]+)?|[πφe])'
+#         example_numbers = list(re.finditer(fr'{number_expression}|\({number_expression}\)|\|{number_expression}\|', example))
+#         if len(example_numbers) > 1:
+#             the_often_meeting_part = example[example_numbers[0].end():example_numbers[-1].start()]
+#             for right_index in range(len(the_often_meeting_part)):
+#                 part_of_the_often_meeting_part = the_often_meeting_part[:right_index]
+#                 if part_of_the_often_meeting_part.count('(') < part_of_the_often_meeting_part.count(')'):
+#                     the_often_meeting_part = '#' * right_index + the_often_meeting_part[right_index:]
+#             the_often_meeting_part = the_often_meeting_part.replace('#', '')
+#             if the_often_meeting_part[:1] not in '0123456789πφe.' and not last_is_digit:
+#                 the_often_meeting_part = the_often_meeting_part[list(re.finditer(r'[0-9πφe.]', the_often_meeting_part))[0].start():]
+#             if re.search(r'[0-9πφe]', the_often_meeting_part):
+#                 return the_often_meeting_part
+#             else:
+#                 return ''
+#         else:
+#             return ''
         
 
 def create_perfect_example(non_perfect_example):    
@@ -354,8 +353,8 @@ def modify_info(example):
         a += {'mod': 'остаток от деления', 'div': 'целочисленное деление'}[example]
     if example in ('sin()', 'cos()', 'tg()', 'ctg()'):
         a += {'sin()': f'синус{when_rad_when_deg}', 'cos()': f'косинус{when_rad_when_deg}', 'tg()': f'тангенс{when_rad_when_deg}', 'ctg()': f'котангенс{when_rad_when_deg}'}[example]
-    if example in ('^2', '^3', '^4'):
-        a += {'^2': 'квадрат', '^3': 'куб', '^4': 'гиперкуб'}[example]
+    if example in ('^2', '^3', '^4', '^5'):
+        a += {'^2': 'квадрат', '^3': 'куб', '^4': 'гиперкуб', '^5': 'метакуб'}[example]
     if example in ('10^100', '10^303', '10^3003', '10^10^100'):
         a += {'10^100': 'гугол', '10^303': 'центиллион', '10^3003': 'миллиллион', '10^10^100': 'гуголплекс'}[example]
     if re.fullmatch(r'1(?: 000){2,8}', example):
@@ -1271,7 +1270,10 @@ def get_difference(old, new):
 
 
 def insertion_if_division_of_one(left_symbol, arg, example):
-    if re.fullmatch(r'(?:[^0-9\.]|^\s*)1', exampled_value(example)[max(cursor_index - 2, 0):cursor_index]):
+    if re.fullmatch(r'(?:[^0-9v\.]|^\s*)1', exampled_value(example)[max(cursor_index - 2, 0):cursor_index]):
+        if arg in ('10^3', '10^6', '10^9', '10^12', '10^15', '10^18'):
+            example = delete_in_example(example, -len(re.search(r'(?:\S|^)\s*$', example_value[:cursor_index])[0]))
+            return insert_in_example(example, f'10^(-{arg[3:]})')
         return insert_in_example(example, f'/{arg}')
     else:
         return insert_in_example(example, f'{'•' if left_symbol in '0123456789φπeထ)!' else ''}{arg}')
@@ -1321,7 +1323,7 @@ def key_calc(key, just_from_added_win=False):
         add_to_last_examples_if_selection_or_cursor_change()
     
     if not bypass:
-        keysym = key.keysym if len(key.keysym) > 1 or key.keysym in 'MBTQIVPEU' else key.keysym.lower()
+        keysym = key.keysym if len(key.keysym) > 1 or key.keysym in 'MBTQIPEUJCF' else key.keysym.lower()
             
         if keysym in ('Tab', 'Up', 'Down', 'Control_L', 'Control_R', 'Shift_L', 'Shift_R', 'Alt_L', 'Alt_R', 'Caps_Lock', 'Win_L'):
             return
@@ -1358,7 +1360,7 @@ def key_calc(key, just_from_added_win=False):
                     bypass = True
     
     if not bypass:
-        if (symbol_left_from_cursor() == '.' and (len(keysym) == 1 and keysym in 'sctklngpefraodmxbivVyujwzPEU' or keysym in keys_after_dot)):
+        if (symbol_left_from_cursor() == '.' and (len(keysym) == 1 and keysym in 'sctlngpefraodmxbivyujwzkMBTQPEUJCF' or keysym in keys_after_dot)):
             example_value = insert_in_example(example_value, '5')
             symbol_left_from_cursor()
         if keysym == 'BackSpace':
@@ -1381,40 +1383,42 @@ def key_calc(key, just_from_added_win=False):
             example_value = ''
             cursor_index = 0
         elif keysym == 'v':
-            example_value = insert_in_example(example_value, f'{find_the_most_useful_symbol_to_paste(example_value, symbol_left_from_cursor() in '0123456789πφe.)!ထ')}')
-            example_value = example_value[:max_character_amount]
-        elif keysym == 'V':
-            example_value = insert_in_example(example_value, f'{find_the_most_useful_symbol_to_paste(example_value, symbol_left_from_cursor() in '0123456789πφe.)!ထ', first=False)}')
-            example_value = example_value[:max_character_amount]
+            example_value = insertion_if_division_of_one(symbol_left_from_cursor(), 'v', example_value)
+            # elif keysym == 'v':
+            #     example_value = insert_in_example(example_value, f'{find_the_most_useful_symbol_to_paste(example_value, symbol_left_from_cursor() in '0123456789πφe.)!ထ')}')
+            #     example_value = example_value[:max_character_amount]
+            # elif keysym == 'V':
+            #     example_value = insert_in_example(example_value, f'{find_the_most_useful_symbol_to_paste(example_value, symbol_left_from_cursor() in '0123456789πφe.)!ထ', first=False)}')
+            #     example_value = example_value[:max_character_amount]
         elif keysym == 'h':
             example_value = insert_in_example(example_value, 'h' if not example_value else '')
         elif keysym == 'space':
             example_value = insert_in_example(example_value, ' ')
-        elif keysym == 'I':
+        elif keysym == 'i':
             example_value = insert_in_example(example_value, 'ထ')
-        # elif keysym == 'b':
-        #     right_find = re.search(r'(?:log\(|log\|)(?=\s*$)', example_value[:cursor_index])
-        #     examped = exampled_value()
-        #     for i in range(len(examped) - 2):
-        #         if examped[i + 1] == '|':
-        #             examped = examped[:i + 1] + 'Uu'[examped[i] in '0123456789!)ueπφ' or bool(re.match(r'[+•/^!\)]|mod|div', examped[i + 2:]))] + examped[i + 2:]
-        #     not_space_counter = 0
-        #     for i, j in enumerate(examped):
-        #         if j != ' ':
-        #             example_value = example_value[:i] + examped[not_space_counter] + example_value[i + 1:]
-        #             not_space_counter += 1
-        #     insert_by = 'by'
-        #     if right_find:
-        #         example_in_future_log_part = example_value[right_find.end():cursor_index]
-        #         if example_in_future_log_part.count('(') == example_in_future_log_part.count(')') and example_in_future_log_part.count('|') % 2 == 0:
-        #             insert_by = ')by' if right_find.group() == 'log(' else '|by' if right_find.group() == 'log|' else 'by'
-        #     match_after_by_module = re.match(r'[^()]*?\|', exampled_value()[cursor_index:])
-        #     match_after_by_scope = re.match(r'[^(|]*?\)', exampled_value()[cursor_index:])
-        #     if match_after_by_module:
-        #         insert_by += '|'
-        #     elif match_after_by_scope:
-        #         insert_by += '('
-        #     example_value = insert_in_example(example_value, insert_by)
+        elif keysym == 'b':
+            right_find = re.search(r'(?:log\(|log\|)(?=\s*$)', example_value[:cursor_index])
+            examped = exampled_value()
+            for i in range(len(examped) - 2):
+                if examped[i + 1] == '|':
+                    examped = examped[:i + 1] + 'Uu'[examped[i] in '0123456789!)ueπφ' or bool(re.match(r'[+•/^!\)]|mod|div', examped[i + 2:]))] + examped[i + 2:]
+            not_space_counter = 0
+            for i, j in enumerate(examped):
+                if j != ' ':
+                    example_value = example_value[:i] + examped[not_space_counter] + example_value[i + 1:]
+                    not_space_counter += 1
+            insert_by = 'by'
+            if right_find:
+                example_in_future_log_part = example_value[right_find.end():cursor_index]
+                if example_in_future_log_part.count('(') == example_in_future_log_part.count(')') and example_in_future_log_part.count('|') % 2 == 0:
+                    insert_by = ')by' if right_find.group() == 'log(' else '|by' if right_find.group() == 'log|' else 'by'
+            match_after_by_module = re.match(r'[^()]*?\|', exampled_value()[cursor_index:])
+            match_after_by_scope = re.match(r'[^(|]*?\)', exampled_value()[cursor_index:])
+            if match_after_by_module:
+                insert_by += '|'
+            elif match_after_by_scope:
+                insert_by += '('
+            example_value = insert_in_example(example_value, insert_by)
         elif keysym == 'dollar':
             pass  # Этот символ можно использовать для пустого нажатия, удалять запрещено!
         elif keysym in ('ampersand', 'greater', 'less', 'braceleft', 'braceright', 'underscore'):
@@ -1422,20 +1426,24 @@ def key_calc(key, just_from_added_win=False):
         elif keysym in ('apostrophe', 'quotedbl'):
             indexes_of_selection = None
             pyperclip.copy(result.get().replace('•', '*').replace('ထ', 'inf').replace('=', '') if keysym == 'quotedbl' else example_value.replace('•', '*').replace('ထ', 'inf'))
-        elif len(keysym) == 1 and keysym in 'zMBTQPEbU':
-            if keysym == 'U':
+        elif len(keysym) == 1 and keysym in 'zkMBTQPEbUJ':
+            if keysym == 'J':
+                example_value = insert_in_example(example_value, '^5')
+            elif keysym == 'U':
                 example_value = insert_in_example(example_value, '^4')
-            elif keysym in 'zMBTQ':
-                zers = '0' * (('zMBTQ'.index(keysym) + 1) * 3)
+            elif keysym == 'z':
                 if symbol_left_from_cursor() == '.' or re.search(r'(?:[^0-9\.]|^)0$', example_value):
-                    example_value = insert_in_example(example_value, '.' * (symbol_left_from_cursor() != '.') + zers[:-1])
+                    example_value = insert_in_example(example_value, '.' * (symbol_left_from_cursor() != '.') + '00')
                 elif symbol_left_from_cursor().isdigit():
-                    example_value = insert_in_example(example_value, zers)
+                    example_value = insert_in_example(example_value, '000')
                 else:
-                    example_value = insert_in_example(example_value, '•' * (symbol_left_from_cursor() in 'φπeထ)!') + f'1{zers}')
+                    example_value = insert_in_example(example_value, '•' * (symbol_left_from_cursor() in 'φπeထ)!') + f'1000')
+            elif keysym in 'kMBTQ':
+                # zers = '0' * (('kMBTQ'.index(keysym) + 1) * 3)
+                example_value = insertion_if_division_of_one(symbol_left_from_cursor(), f'10^{('kMBTQ'.index(keysym) + 1) * 3}', example_value)
             elif keysym == 'P':
                 example_value = insert_in_example(example_value, f'{'/100' if symbol_left_from_cursor() in '0123456789φπeထ)!' else '1/100'}')
-            elif keysym in ('E', 'b'):
+            elif keysym == 'E':
                 example_value = insert_in_example(example_value, '•10^' if symbol_left_from_cursor() in '0123456789φπeထ)!' else '1•10^' if symbol_left_from_cursor() in '^√' else '10^')
         elif keysym in ('period', 'comma'):
             if re.search(r'\.\d+$', exampled_value()[:cursor_index]):
@@ -1446,8 +1454,8 @@ def key_calc(key, just_from_added_win=False):
             else:
                 example_value = delete_in_example(example_value, -len(re.search(r'\.\s*$', example_value[:cursor_index])[0]))
                 example_value = insert_in_example(example_value, '•0.')
-        elif keysym in ('s', 'c', 't', 'k'):
-            example_value = insertion_if_division_of_one(symbol_left_from_cursor(), {'s': 'sin', 'c': 'cos', 't': 'tg', 'k': 'ctg'}[keysym], example_value)
+        elif keysym in ('s', 'c', 't', 'C'):
+            example_value = insertion_if_division_of_one(symbol_left_from_cursor(), {'s': 'sin', 'c': 'cos', 't': 'tg', 'C': 'ctg'}[keysym], example_value)
             if symbol_right_from_cursor() != '(':
                 example_value = insert_in_example(example_value, '(')
                 example_value = insert_in_example(example_value, ')', right=True)
@@ -1470,7 +1478,7 @@ def key_calc(key, just_from_added_win=False):
         elif keysym == 'a':
             example_value = insertion_if_division_of_one(symbol_left_from_cursor(), '|', example_value)
             example_value = insert_in_example(example_value, '|', right=True)
-        elif keysym in ('exclam', 'i'):
+        elif keysym in ('exclam', 'f'):
             example_value = insert_in_example(example_value, '!')
         elif keysym == 'percent':
             example_value = insert_in_example(example_value, 'mod')
@@ -1525,23 +1533,20 @@ def key_calc(key, just_from_added_win=False):
                 if keysym == 'semicolon':
                     example_value = insert_in_example(example_value, '(1/')
                     example_value = insert_in_example(example_value, ')', right=True)
-                elif symbol_left_from_cursor() == '√':
-                    example_value = insert_in_example(example_value, '3/')
-                elif symbol_left_from_cursor() == '^':
-                    example_value = insert_in_example(example_value, f'(1/')
-                    example_value = insert_in_example(example_value, ')', right=True)
+                elif symbol_left_from_cursor() in '√•^':
+                    example_value = insert_in_example(example_value, '2/')
                 else:
                     example_value = insert_in_example(example_value, '1/')
             else:
                 example_value = insert_in_example(example_value, '/')
         elif keysym == 'e':
             example_value = insertion_if_division_of_one(symbol_left_from_cursor(), 'e', example_value)
-        elif keysym == 'f':
+        elif keysym == 'F':
             example_value = insertion_if_division_of_one(symbol_left_from_cursor(), 'φ', example_value)
         elif keysym in ('parenleft', 'bracketleft'):
             example_value = insertion_if_division_of_one(symbol_left_from_cursor(), '(', example_value)
         elif keysym == 'o':
-            example_value = insert_in_example(example_value, f'{'/' if re.search(r'(?:(?:[^0-9\.]|^)1|!)$', exampled_value()[:cursor_index]) else '•' if symbol_left_from_cursor() in '0123456789φπeထ)' else ''}(')
+            example_value = insert_in_example(example_value, f'{'/' if re.search(r'(?:[^0-9\.]|^)1$', exampled_value()[:cursor_index]) else '•' if symbol_left_from_cursor() in '0123456789φπeထ)!' else ''}(')
             example_value = insert_in_example(example_value, ')', right=True)
         elif keysym in ('parenright', 'bracketright'):
             example_value = insert_in_example(example_value, ')')
@@ -2075,7 +2080,7 @@ def define_future_of_cursor(side):
                     break
             temp_cursor_index += i
             return temp_cursor_index
-        temp_cursor_index += len(re.match(r'(?:[φπe]|\d*\.?\d*)?', replaced_abs_value[temp_cursor_index:])[0])
+        temp_cursor_index += len(re.match(r'(?:v\d*|[φπe]|\d*\.?\d*)?', replaced_abs_value[temp_cursor_index:])[0])
         return temp_cursor_index
     
     elif side == 'left':
@@ -2097,7 +2102,7 @@ def define_future_of_cursor(side):
             temp_cursor_index = i
 
         else:
-            temp_cursor_index -= len(re.search(r'(?:[φπe]|\d*\.?\d*)?$', replaced_abs_value[:temp_cursor_index])[0])
+            temp_cursor_index -= len(re.search(r'(?:v\d*|[φπe]|\d*\.?\d*)?$', replaced_abs_value[:temp_cursor_index])[0])
             if re.search(r'(?:\(|U|\[|^)-$', replaced_abs_value[:temp_cursor_index]):
                 temp_cursor_index -= 1
         temp_cursor_index -= len(re.search(r'(?:sin|cos|tg|ctg|ln|lg|)$', replaced_abs_value[:temp_cursor_index])[0])
@@ -2221,14 +2226,14 @@ def paste_text(*key):
     
     replaced_paste = pyperclip.paste().replace('E', '#').lower().replace('#', 'E')
 
-    if re.search(r'2\d\d\d\.(?:0\d|11|12)\.(?:[0-3]\d|31) (?:[01]\d|2[0-3])(?::[0-5]\d){2}', replaced_paste):
+    if re.search(r'2\d{3}\.(?:0\d|11|12)\.(?:[0-3]\d|31) (?:[01]\d|2[0-3])(?::[0-5]\d){2}', replaced_paste):
         # Алгоритм замены для истории
         
         replaced_paste = re.sub(r'\n', '&', replaced_paste)
         replaced_paste = re.sub(r' ', '#', replaced_paste)
         replaced_paste = re.sub(r'\s', '', replaced_paste)
         replaced_paste = re.sub(r'&&', ', ', replaced_paste)
-        replaced_paste = re.sub(r'&(2\d\d\d\.(?:0\d|11|12)\.(?:[0-3]\d|31))#((?:[01]\d|2[0-3])(?::[0-5]\d){2})(?:#(\(\d{1,2})#(знак(?:|а|ов))#(перед|после)#(запятой\)))?', r' [\1 \2 \3 \4 \5 \6]', replaced_paste).replace(4 * ' ', '')
+        replaced_paste = re.sub(r'&(2\d{3}\.(?:0\d|11|12)\.(?:[0-3]\d|31))#((?:[01]\d|2[0-3])(?::[0-5]\d){2})(?:#(\(\d{1,2})#(знак(?:|а|ов))#(перед|после)#(запятой\)))?', r' [\1 \2 \3 \4 \5 \6]', replaced_paste).replace(4 * ' ', '')
         replaced_paste = ', '.join((i.replace('&', '=', 1) for i in replaced_paste.split(', ')))
         replaced_paste = replaced_paste.replace('&', ' ')
         replaced_paste = re.sub(r'#', '', replaced_paste)
@@ -2269,6 +2274,27 @@ def paste_text(*key):
             for index2, item2 in enumerate(item1):
                 if not re.search(r'[а-яА-ЯЁё]', item2):
                     replaced_paste[index1][index2] = replace_paste_symbols(replaced_paste[index1][index2])
+        if len(set(list(map(len, replaced_paste)))) == 1:
+            table_data_size = {1: len(replaced_paste[0]), 0: len(replaced_paste)}  # 1 - width, 0 - height (for comftable boolean logic work)
+            prior_side = table_data_size[1] > table_data_size[0]
+            if not f'v{table_data_size[prior_side]}' in example_value:
+                prior_side = not prior_side
+            copied_results = []
+            old_examp_val = example_value
+            for item1 in (zip(*replaced_paste), replaced_paste)[prior_side]:
+                for index2, item2 in enumerate(item1):
+                    if re.fullmatch(r'\d+\.?\d*|\.\d+|φπe', item2) is None: item2 = f'({item2})'
+                    example_value = example_value.replace(f'v{index2 + 1}', item2)
+                cursor_index = len(example_value)
+                make_it_future()
+                save_example_to_history()
+                copied_results.append(result.get().replace('=', ''))
+                new_examp_val = example_value
+                example_value = old_examp_val
+            example_value = new_examp_val
+            pyperclip.copy(('\t', '\n')[prior_side].join(copied_results))
+            return
+
         matrix_1x1 = [[replaced_paste[0][0]]] == replaced_paste
         replaced_paste = [f'({'+'.join([item2 for item2 in item1])})' if len(item1) > 1 else item1[0] for item1 in replaced_paste]
         
@@ -2723,7 +2749,7 @@ def check_theme_or_geometry_change():
             pyautogui.hotkey('ctrl', 'backspace')
             main_win.after(20, unbind_left_button)
             example_value = entry_box.get()
-    elif curr_time - tape_creation_time > 2:
+    elif curr_time - tape_creation_time > 1.5:
         destroy_tape()
         tape_creation_time = 10 ** 100
             
