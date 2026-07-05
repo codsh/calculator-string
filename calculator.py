@@ -462,7 +462,7 @@ def solve_example(example=None):
     example = clean_pattern_empty_scopes(example)
     example = re.sub(r'[Uu]', '|', example)
     example = re.sub(r'(?<!^)(?<![+\-•/:^(])(?<!tg|ln|lg|by)(?<!mod|div|sin|cos|ctg|log)e-(\d*\.?\d*)', r'$(-\1)', example)
-    example = re.sub(r'e(\d+\.?\d*|\.\d+)', r'$\1', example)
+    example = re.sub(r'e(\d+\.?\d*|\.\d+|\()', r'$\1', example)
     if re.search(r'[eπφ][eπφ(]|[eπφ)][eπφ]', example):
         return 'Рядом с константой не может быть ни скобки, ни константы!'
     example = example.replace('π', pi_replaced).replace('φ', fi_replaced).replace('e', e_replaced).replace('$', 'e')
@@ -1352,7 +1352,7 @@ def key_calc(key, just_from_added_win=False):
         add_to_last_examples_if_selection_or_cursor_change()
     
     if not bypass:
-        keysym = key.keysym if len(key.keysym) > 1 or key.keysym in 'MBTQIPEUJCF' else key.keysym.lower()
+        keysym = key.keysym if len(key.keysym) > 1 or key.keysym in 'MBTQIPUJCF' else key.keysym.lower()
             
         if keysym in ('Tab', 'Up', 'Down', 'Control_L', 'Control_R', 'Shift_L', 'Shift_R', 'Alt_L', 'Alt_R', 'Caps_Lock', 'Win_L'):
             return
@@ -1477,8 +1477,6 @@ def key_calc(key, just_from_added_win=False):
                 example_value = insertion_if_division_of_one(symbol_left_from_cursor(), f'10^{('kMBTQ'.index(keysym) + 1) * 3}', example_value)
             elif keysym == 'P':
                 example_value = insert_in_example(example_value, f'{'/100' if symbol_left_from_cursor() in '0123456789φπeထ)!' else '1/100'}')
-            elif keysym == 'E':
-                example_value = insert_in_example(example_value, '•10^' if symbol_left_from_cursor() in '0123456789φπeထ)!' else '1•10^' if symbol_left_from_cursor() in '^√' else '10^')
         elif keysym in ('period', 'comma'):
             if re.search(r'\.\d+$', exampled_value()[:cursor_index]):
                 example_value = insert_in_example(example_value, '•0.')
@@ -2273,6 +2271,7 @@ def paste_text(*key):
         indexes_of_selection = {'start': cursor_index, 'end': cursor_index}
     
     replaced_paste = pyperclip.paste().replace('E', '#').lower().replace('#', 'E')
+    
 
     if re.search(r'2\d{3}\.(?:0\d|11|12)\.(?:[0-3]\d|31) (?:[01]\d|2[0-3])(?::[0-5]\d){2}', replaced_paste):
         # Алгоритм замены для истории
@@ -2288,6 +2287,7 @@ def paste_text(*key):
     elif re.search(r'\t|.+\n.+', replaced_paste):
         replaced_paste = [re.sub(r'\t{2,}', r'\t', i).strip('\t') for i in replaced_paste.splitlines() if i]
         replaced_paste = [i.strip('\t').split('\t') if i.strip('\t').count('\t') else [i] for i in replaced_paste]
+
         for index1, item1 in enumerate(replaced_paste):
             for index2, item2 in enumerate(item1):
                 item2 = item2.replace(' ', '')
@@ -2307,7 +2307,7 @@ def paste_text(*key):
                 item2 = item2.replace('base', 'by')
                 item2 = re.sub(r'(?<=[0-9φπeထ)!])E', r'•10^', item2)
                 item2 = re.sub(r'(?<=[^√])E', r'1•10^', item2).replace('E', '•10^')
-
+                
                 item2 = re.sub(r'(sin|cos|tg|ctg|ln|lg|log)(\d+\.?\d*|\.\d+)(\()', r'\1#\2#\3', item2)
                 while re.search(mul_between_digits_and_constants := r'([φπe\)])([0-9φπe\.\(])', item2):
                     item2 = re.sub(mul_between_digits_and_constants, r'\1•\2', item2)
@@ -2316,13 +2316,14 @@ def paste_text(*key):
                 item2 = re.sub(r'(\d)√', r'\1•√', item2)
                 i = item2.replace('#', '')
                 insert_in_example(example_value, '•10^' if symbol_left_from_cursor() in '0123456789φπeထ)!' else '1•10^' if symbol_left_from_cursor() in '^√' else '10^')
-                replaced_paste[index1][index2] = (f'({i})', i)[re.fullmatch(fr'{num_construct}', i) is not None]
-
+                replaced_paste[index1][index2] = (f'({i})', i)[re.fullmatch(num_construct, i) is not None]
+        
         for index1, item1 in enumerate(replaced_paste):
             for index2, item2 in enumerate(item1):
                 if not re.search(r'[а-яА-ЯЁё]', item2):
                     replaced_paste[index1][index2] = replace_paste_symbols(replaced_paste[index1][index2])
-        if len(set(list(map(len, replaced_paste)))) == 1:
+        
+        if len(set(list(map(len, replaced_paste)))) == 1 and 'v' in example_value:
             table_data_size = {1: len(replaced_paste[0]), 0: len(replaced_paste)}  # 1 - width, 0 - height (for comftable boolean logic work)
             prior_side = table_data_size[1] > table_data_size[0]
             if not f'v{table_data_size[prior_side]}' in example_value:
@@ -2331,7 +2332,7 @@ def paste_text(*key):
             old_examp_val = example_value
             for item1 in (zip(*replaced_paste), replaced_paste)[prior_side]:
                 for index2, item2 in enumerate(item1):
-                    if re.fullmatch(fr'{num_construct}', item2) is None: item2 = f'({item2})'
+                    # if re.fullmatch(num_construct, item2) is None: item2 = f'({item2})'
                     example_value = example_value.replace(f'v{index2 + 1}', item2)
                 cursor_index = len(example_value)
                 make_it_future()
@@ -2340,6 +2341,13 @@ def paste_text(*key):
                 new_examp_val = example_value
                 example_value = old_examp_val
             example_value = new_examp_val
+            for indx, copied_res in enumerate(copied_results):
+                copied_res = copied_res.replace('•10^', 'e').replace(' ', '')
+                copied_res = copied_res.split('e')
+                print(copied_res[0])
+                copied_res[0] = str(Decimal(copied_res[0]).quantize(Decimal('.00'), ROUND_HALF_UP))
+                copied_results[indx] = 'e'.join(copied_res)
+                print(copied_res)
             pyperclip.copy(('\t', '\n')[prior_side].join(copied_results))
             return
 
@@ -2349,6 +2357,7 @@ def paste_text(*key):
         replaced_paste = ('+' * (cursor_index > 0 and symbol_left_from_cursor() in '0123456789φπeထ)!.') + '(' * (not matrix_1x1) +
                           ('+'.join(replaced_paste) if len(replaced_paste) > 1 else replaced_paste[0][1:-1] if not matrix_1x1 else replaced_paste[0]) +
                           ')' * (not matrix_1x1) + '+' * (cursor_index < len(example_value) and symbol_right_from_cursor() in '0123456789φπeထ(√.'))
+        
         change_text(replaced_paste)
         return 'break'
     else:
