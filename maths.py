@@ -81,7 +81,7 @@ class C:
         elif rond(abs(power), 1) % 2 == 1 and num < 0:
             return rond(-Decimal(str(mp.root(abs(num), power))), 0)
         else:
-            return C.pow(num, power, power_type='k')
+            return cls.pow(num, power, power_type='k')
     
     @classmethod_with_cache
     def log(cls, num_by_log, base):
@@ -109,41 +109,81 @@ class C:
         return log_result_if_both_args_positive if base_rond1 > 0 and num_by_log_rond1 > 0 else log_result_if_both_args_positive_rond4
     
     @classmethod
-    def is_deg(cls, angle):
-        return '.' not in angle or len(angle.split('.')[-1]) < 10 or bool(re.findall(r'(\d+)\1{7}', angle.split('.')[-1][:100]))
+    def is_rational(cls, angle):
+        if '.' not in angle or len(angle.split('.')[-1]) < 10 or bool(re.findall(r'(\d+)\1{7}', angle.split('.')[-1][:100])):
+            return True
+        angle = Decimal(angle)
+        for i in range(max_denominator // 2, max_denominator):
+            reversed_angle = 1 / Decimal(i)
+            rounded_reversed_angle = rond(reversed_angle, 1)
+            maybe_num_about_zero = rond(angle, 1) % rounded_reversed_angle
+            if rond(maybe_num_about_zero, 2) == 0:
+                return True
+        else:
+            return False
+
     
     @classmethod_with_cache
-    def rad_to_deg(cls, angle):
-        if cls.is_deg(angle):
-            angle = Decimal(angle)
-        else:
-            angle = Decimal(angle)
-            if angle > 2 * C.pi or angle < 2 * C.pi:
-                angle %= 2 * C.pi
-            if angle < 0:
-                angle += 2 * C.pi
-            for i in range(max_denominator // 2, max_denominator):
-                reversed_angle = 1 / Decimal(i)
-                rounded_reversed_angle = rond(reversed_angle, 1)
-                maybe_num_about_zero = rond(angle, 1) % rounded_reversed_angle
-                if rond(maybe_num_about_zero, 2) == 0:
-                    break
-            else:
-                angle = rond(angle / C.pi * 180, 0)
+    def rad_to_deg(cls, angle, fake_degree_info):
+        is_rat = cls.is_rational(angle)
+        angle = Decimal(angle)
+        if not (is_rat, not is_rat)[fake_degree_info]:
+            angle = cls.deg(angle)
+           
         if angle > 360 or angle < 360:
             angle %= 360
         if angle < 0:
             angle += 360
-        return str(angle)
-        
+        return angle
+    
+    @classmethod
+    def deg(cls, angle):
+        angle = Decimal(angle)
+        # предподготовка числа, чтобы оно было высчитано более аккуратно
+        if angle > 2 * C.pi or angle < 2 * C.pi:
+            angle %= 2 * C.pi
+        if angle < 0:
+            angle += 2 * C.pi
+            
+        # аккуратное высчитывание числа
+        return rond(angle / C.pi * 180, 0)
+    
+    @classmethod
+    def rad(cls, angle):
+        angle = Decimal(angle)
+        if angle > 360 or angle < 360:
+            angle %= 360
+        if angle < 0:
+            angle += 360
+        angle = rond(angle / 180 * C.pi, 0)
+        return angle
+    
+
+    @classmethod
+    def atrig(cls, func, val):
+        make_info_deg = 'd' in func
+        func = func.replace('d', '')
+        val = Decimal(val)
+        unc = func[3:]
+        if unc in ('sin', 'cos') and not -1 <= val <= 1:
+            return f'значения {'ко' * (unc == 'cos')}синуса не определены вне промежутка от -1 до 1'
+        angle = {'sin': mp.asin, 'cos': mp.acos, 'tg': mp.atan, 'ctg': mp.acot}[unc](val)
+        if make_info_deg: angle = cls.deg(str(angle))
+        if angle > 180 and unc in ('tg', 'ctg'): angle -= 180
+        return angle
+    
     
     @classmethod_with_cache
-    def trig(cls, func, angle, are_degrees=True):
-        angle = Decimal(angle)
+    def trig(cls, func, raw_angle):
+        fake_degree_info = 'd' in func
+        func = func.replace('d', '')
+        is_rat = cls.is_rational(raw_angle)
+        new_degree_info = (is_rat, not is_rat)[fake_degree_info]
+        angle = cls.rad_to_deg(raw_angle, fake_degree_info)
         if func in ('tg', 'cos') and rond(angle, 1) % 180 == 90:
-            return f'Тангенс углов {('π/2, 3π/2, 5π/2, ...', '90, 270, 450, ...')[are_degrees]} смысла не имеет! (±ထ)' if func != 'cos' else 0
+            return f'Тангенс углов {('π/2, 3π/2, 5π/2, ...', '90, 270, 450, ...')[new_degree_info]} смысла не имеет! (±ထ)' if func != 'cos' else 0
         if func in ('sin', 'ctg') and rond(angle, 1) % 180 == 0:
-            return f'Котангенс углов {('0, π, 2π, ...', '0, 180, 360, ...')[are_degrees]} смысла не имеет! (±ထ)' if func != 'sin' else 0
+            return f'Котангенс углов {('0, π, 2π, ...', '0, 180, 360, ...')[new_degree_info]} смысла не имеет! (±ထ)' if func != 'sin' else 0
         angle = rond(angle / 180 * C.pi, 1)
         if func == 'sin':
             return mp.sin(angle)

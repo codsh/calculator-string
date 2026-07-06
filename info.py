@@ -18,14 +18,18 @@ def rond(num, rounding_accuracy):
 invisible_win_title = 'невидимое окно'
 temp_scopes, temp_scopes_with_smth = r'(?:\(-?\)|U-?u)', r'(?:\(.*?\)|U.*?u)'
 calc_geometry_state_change_expression = r'Максимум \d+ символ(?:|а|ов)|Калькулятор теперь (?:вверху|в центре|внизу)'
-pattern_checking_on_empty_scopes = fr'(?:[+\-/•:^√]|mod|div)*(?:(?:sin|cos|tg|ctg|lg|ln){temp_scopes}|log{temp_scopes}by{temp_scopes_with_smth}|log{temp_scopes_with_smth}by{temp_scopes}|{temp_scopes})'
+pattern_checking_on_empty_scopes = fr'(?:[+\-/•:^√]|mod|div)*(?:(?:sin|cos|c?tg|lg|ln){temp_scopes}|log{temp_scopes}by{temp_scopes_with_smth}|log{temp_scopes_with_smth}by{temp_scopes}|{temp_scopes})'
 
 def reunite(words):
     return [f'{(r'\s*').join(['\\' + symb if symb in '()|' else symb for symb in word])}' for word in words]
 
-united_symbols = ('log', 'div', 'mod', 'sin', 'cos', 'ctg') + ('ln', 'lg', 'tg', 'by')
-united_symbols_with_scopes = ('log(', 'sin(', 'cos(', 'ctg(', ')by(') + ('log|', 'sin|', 'cos|', 'ctg|', '|by|', '|by(', ')by|') + ('ln|', 'lg|', 'tg|') + ('ln(', 'lg(', 'tg(')
-united_symbols_without_scopes = ('sin', 'cos', 'ctg', 'tg', 'ln', 'lg')  # порядок важен, сначала котангенс а лишь потом тангенс, чтобы удалялся ctg а не c tg
+darc_generator = tuple([f'{i}{j}' for i in ('darc', 'arc', 'd') for j in ('sin', 'cos', 'ctg', 'tg', '')])
+ddarc_gen = tuple([f'{i}{j}' for i in ('darc', 'arc', 'd', '') for j in ('sin', 'cos', 'ctg', 'tg')])
+
+united_symbols = darc_generator + ('log', 'div', 'mod', 'sin', 'cos', 'ctg') + ('ln', 'lg', 'tg', 'by')
+united_symbols_with_scopes = (tuple(f'{i}{j}' for j in ('|', '(') for i in darc_generator)
+     + ('log(', 'sin(', 'cos(', 'ctg(', ')by(') + ('log|', 'sin|', 'cos|', 'ctg|', '|by|', '|by(', ')by|') + ('ln|', 'lg|', 'tg|') + ('ln(', 'lg(', 'tg('))
+united_symbols_without_scopes = darc_generator + ('sin', 'cos', 'ctg', 'tg', 'ln', 'lg')  # порядок важен, сначала котангенс а лишь потом тангенс, чтобы удалялся ctg а не c tg
 full_funcs_with_Uu = tuple((f'{i}{j}' for i in ('sin', 'cos', 'tg', 'ctg', 'lg', 'ln') for j in ('()', 'Uu'))) + tuple((f'log{i}by{j}' for i in ('()', 'Uu') for j in ('()', 'Uu')))
 
 special_keys = ('Up', 'Down', 'Left', 'Right', 'Control_L', 'Return', 'grave', 'Tab', 'changed text', 'Win_L'

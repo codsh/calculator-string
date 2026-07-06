@@ -283,18 +283,18 @@ def create_perfect_example(non_perfect_example):
         non_perfect_example = re.sub(r'\((-(?:[φπe]|[0-9]+(?:\.[0-9]+)?))\)', r'\1', non_perfect_example)
     non_perfect_example = re.sub(r'\(([φπe]|[0-9]+(?:\.[0-9]+)?)\)', r'\1', non_perfect_example)
     
-    non_perfect_example = re.sub(r'(sin|cos|tg|ctg|ln|lg|by)(\d+(?:\.\d+)?|\.\d+|e)', r'\1(\2)', non_perfect_example)
+    non_perfect_example = re.sub(r'((?:d(?!i))?(?:arc)?(?:sin|cos|c?tg)|ln|lg|by)(\d+(?:\.\d+)?|\.\d+|e)', r'\1(\2)', non_perfect_example)
     non_perfect_example = re.sub(r'(ln|lg)([φπe])', r'\1(\2)', non_perfect_example)
     non_perfect_example = re.sub(r'(mod|div)([φπe])', r'\1(\2)', non_perfect_example)
     non_perfect_example = re.sub(r'([φπe])(mod|div)', r'(\1)\2', non_perfect_example)
     non_perfect_example = re.sub(r'log([φπe]|\d+(?:\.\d+)?|\.\d+)by', r'log(\1)by', non_perfect_example)
-    non_perfect_example = re.sub(r'(sin|cos|tg|ctg|ln|lg|log|by)\((\d{1,4}|\d\.\d{1,3}|\d{2}\.\d{1,2}|\d{3}\.\d)\)', r'\1\2', non_perfect_example)
+    non_perfect_example = re.sub(r'((?:sin|cos|c?tg)|ln|lg|log|by)\((\d{1,4}|\d\.\d{1,3}|\d{2}\.\d{1,2}|\d{3}\.\d)\)', r'\1\2', non_perfect_example)
     
     non_perfect_example = non_perfect_example.replace('U', '|').replace('u', '|').strip('R')
     if non_perfect_example[:1] == '(' and non_perfect_example[-1:] == ')':
         non_perfect_example = non_perfect_example[1:-1]
     
-    non_perfect_example = re.sub(r'(?<![a-z])\(((?:sin|cos|tg|ctg|ln|lg|by)(?:\|.*?\||\(.*?\)))\)', r'\1', non_perfect_example)
+    non_perfect_example = re.sub(r'(?<![a-z])\(((?:(?:d(?!i))?(?:arc)?(?:sin|cos|ctg|tg)|ln|lg|by)(?:\|.*?\||\(.*?\)))\)', r'\1', non_perfect_example)
     non_perfect_example = re.sub(r'(?<![a-z])\((log(?:\|.*?\||\(.*?\))by(?:\|.*?\||\(.*?\)))\)', r'\1', non_perfect_example)
     
     return non_perfect_example
@@ -334,7 +334,6 @@ def rescope_example(unscoped_example):
 
 def modify_info(example):
     a = '– '
-    when_rad_when_deg = '(в радианах, если угол иррациональный, иначе в градусах)'
     if not example:
         return calculator_greeting
     if example == calculator_greeting.lower():
@@ -351,8 +350,14 @@ def modify_info(example):
         a += {'√': 'квадратный корень', '3√': 'кубический корень', '4√': 'биквадратный корень', }[example[:-2]]
     if example in ('mod', 'div'):
         a += {'mod': 'остаток от деления', 'div': 'целочисленное деление'}[example]
-    if example in ('sin()', 'cos()', 'tg()', 'ctg()'):
-        a += {'sin()': f'синус{when_rad_when_deg}', 'cos()': f'косинус{when_rad_when_deg}', 'tg()': f'тангенс{when_rad_when_deg}', 'ctg()': f'котангенс{when_rad_when_deg}'}[example]
+    if example in ('d()', 'arc()', 'darc()'):
+        a += {'d()': 'градусор: преобразует всё в градусы', 'arc()': 'радиатор: преобразует всё в радианы', 'darc()': 'dark side of this calculator? it killed 3 years of my life'}[example]
+    if example in (f'{i}{j}' for i in ('', 'd') for j in ('sin()', 'cos()', 'tg()', 'ctg()')):
+        a += ({'sin': 'синус', 'cos': 'косинус', 'tg': 'тангенс', 'ctg': 'котангенс'}[example.replace('d', '')[:-2]] +
+              f'(в радианах, если угол {'ир' * (not 'd' in example)}рациональный, иначе в градусах)')
+    if example in (f'{i}{j}' for i in ('', 'd') for j in ('arcsin()', 'arccos()', 'arctg()', 'arcctg()')):
+        atemp = {'sin': 'синус', 'cos': 'косинус', 'tg': 'тангенс', 'ctg': 'котангенс'}[example.replace('d', '')[3:-2]]
+        a += ('градусный ' * ('d' in example) + 'арк' + atemp + f'(число, которое вернёт {atemp} от искомых {('радиан', 'градусов')['d' in example]})')
     if example in ('^2', '^3', '^4', '^5'):
         a += {'^2': 'квадрат', '^3': 'куб', '^4': 'гиперкуб', '^5': 'метакуб | петакуб'}[example]
     if example in ('10^100', '10^303', '10^3003', '10^10^100'):
@@ -461,17 +466,17 @@ def solve_example(example=None):
     example = pre_example[1:-1]
     example = clean_pattern_empty_scopes(example)
     example = re.sub(r'[Uu]', '|', example)
-    example = re.sub(r'(?<!^)(?<![+\-•/:^(])(?<!tg|ln|lg|by)(?<!mod|div|sin|cos|ctg|log)e-(\d*\.?\d*)', r'$(-\1)', example)
+    example = re.sub(r'(?<!^)(?<![+\-•/:^(])(?<!d)(?<!tg|ln|lg|by)(?<!mod|div|sin|cos|ctg|log|arc)e-(\d*\.?\d*)', r'$(-\1)', example)
     example = re.sub(r'e(\d+\.?\d*|\.\d+|\()', r'$\1', example)
     if re.search(r'[eπφ][eπφ(]|[eπφ)][eπφ]', example):
         return 'Рядом с константой не может быть ни скобки, ни константы!'
     example = example.replace('π', pi_replaced).replace('φ', fi_replaced).replace('e', e_replaced).replace('$', 'e')
     example = example.replace('.', ',').replace(' ', '').replace('/', ':')
-    example = example.replace('√', '$').replace('k', '$').replace('r', '$')
+    example = re.sub(r'(?<!a)r(?!c)', '$', example.replace('√', '$').replace('k', '$'))
     example = example.replace('by', ')by').replace('log', 'log(')
     example = f'({example})'.replace('-)', ')')[1:-1]
-    example = re.sub(r'(?:(?<=mod|div|sin|cos|ctg|log)|(?<=[+\-•/:^(√])|(?<=ln|lg|by|tg)),', r'0,', example)
-    example = re.sub(r',(?=mod|div|sin|cos|tg|ctg|log|ln|lg|by|[+\-•:^)!])', r',0', example)
+    example = re.sub(r'(?<=d)(?<=mod|div|sin|cos|ctg|log|arc)(?<=[+\-•/:^(√])(?<=ln|lg|by|tg),', r'0,', example)
+    example = re.sub(r',(?=mod|div|d(?!i)|arc|sin|cos|c?tg|log|ln|lg|by|[+\-•:^)!])', r',0', example)
     example = re.sub(r'(?:[\+\-•:^,]|mod|div)(?=\))', r'', f'({example})')
     for i in range(len(example) - 2):
         if example[i + 1] == '|':
@@ -480,13 +485,12 @@ def solve_example(example=None):
     if those_symbols_cannot_be_near:
         those_symbols_cannot_be_near = those_symbols_cannot_be_near[0].replace(',', '.').replace(':', '/')
         if those_symbols_cannot_be_near == '//':
-            return f'Сочетание "//" в примере недопустимо! Нужно деление нацело (клавиша \'d\')?'
+            return f'Сочетание "//" в примере недопустимо! Нужно деление нацело (дважды нажми на клавишу \'/\')?'
         return f'Сочетание "{those_symbols_cannot_be_near}" в примере недопустимо!'
     pre_example_brackets = ''.join([i for i in example if i in '()Uu'])
     example_brackets = ''.join([i for i in example.replace('log', '<').replace('by', '>') if i in '()Uu<>'])
     e_replaced, pi_replaced, fi_replaced = [i.replace('(', '\\(').replace(')', '\\)').replace('.', ',').replace('+', '\\+') for i in (e_replaced, pi_replaced, fi_replaced)]
     consts_expression = fr'(?:{e_replaced}|{pi_replaced}|{fi_replaced})'
-    
     if re.search(fr'{consts_expression}U|u{consts_expression}', example):
         return 'Рядом с константой не может быть модуля!'
     while example_brackets[:1] == '(' and example_brackets[-1:] == ')':
@@ -516,11 +520,12 @@ def solve_example(example=None):
         example = example[:1] + example[2:]
     example = example.replace('+-', '-').replace('--', '+').replace('•-', '•(0-1)•').replace(':-', ':(0-1):')
     saved_example = example
+    example = example.replace('arc', '1+1-').replace('div', 'DIV').replace('d', '1+1-').replace('DIV', 'div')
     example = example.replace('sin', '1+1-').replace('cos', '1+1-').replace('ctg', '1+1-').replace('tg', '1+1-')
     example = example.replace('lg', '1+1-').replace('ln', '1+1-').replace('by', '+')
     example = example.replace('k', '+1-').replace('log', '1+1-').replace('2.718281828459045', '1+1')
     example = example.replace('^-', '+').replace('+-', '-').replace('--', '+')
-    if re.search(r'(?:sin|cos|tg|ctg|k)(?:[+•:^,)!u]|mod|div)', saved_example):
+    if re.search(r'(?:sin|cos|c?tg|k|d(?!i)|arc)(?:[+•:^,)!u]|mod|div)', saved_example):
         return 'В примере после одной из функций стоит не тот символ, либо отстутствует что-либо!'
     for i in (list('+•:^,)-0!u') + ['mod', 'div']):
         for j in ('lg', 'ln', 'log'):
@@ -528,7 +533,7 @@ def solve_example(example=None):
                 return 'Число, находящееся после функции, со знаком минус берётся в скобки!'
             if ((j + i) in saved_example) and ((j + '0,') not in saved_example):
                 return 'В примере после одной из функций ошибка!'
-    if re.search(r'[0-9,\.](?:sin|cos|tg|ctg|lg|ln|log)', saved_example):
+    if re.search(r'[0-9,\.](?:sin|cos|c?tg|lg|ln|log|arc|d(?!i))', saved_example):
         return "В примере перед одной из функций стоит не тот символ! (возможно перед этой функцией нужно поставить '•')"
     example = example.replace('mod', '%').replace('div', '@')
     if 'ထ' in example:
@@ -557,7 +562,7 @@ def solve_example(example=None):
                 return f'Почему в примере введено "{example[i + 1:i + 3]}"?'
     example = saved_example
     
-    if re.search(r'(?:k|sin|cos|tg|ctg|by)-', example):
+    if re.search(r'(?:k|sin|cos|c?tg|by|d(?!i)|arc)-', example):
         return 'Нельзя число или выражение со знаком минус брать без скобок!'
     
     for i in range(len(example) - 2):
@@ -570,11 +575,9 @@ def solve_example(example=None):
     
     while '()' in example_brackets or 'Uu' in example_brackets:
         example_brackets = example_brackets.replace('()', '').replace('Uu', '')
-    
     example = f'({example})'.replace('^-', '&').replace(',', '.').replace('(-', '(0-').replace('U-', 'U0-')
-    example = re.sub(r'(\+|!|div|mod|U|u|•|:|\^|-|\(|\)|sin|cos|tg|ctg|ln|lg|k|log|by|e)', r' \1 ', example)
+    example = re.sub(r'(\+|!|div|mod|U|u|•|:|\^|-|\(|\)|(?:d(?!iv))?(?:arc)?(?:sin|cos|c?tg)|ln|lg|k|log|by|e|d|arc)', r' \1 ', example)
     example_for_calculations = [i for i in example.replace('&', ' ^- ').split() if i]
-    
     perfect_example = create_perfect_example(pre_example)
     
     if not perfect_example:
@@ -590,7 +593,7 @@ def solve_example(example=None):
                     i_stop = i
                     break
             inner_example = example_for_calculations[i_start + 1:i_stop]
-            while any((element in inner_example for element in 'sin cos tg ctg ln lg e k ! log'.split())):
+            while any((element in inner_example for element in ('sin cos tg ctg ln lg e k ! log'.split() + list(darc_generator)))):
                 for i in range(len(inner_example) - 3, -1, -1):
                     if not (inner_example[i + 1] == 'e' and is_num(inner_example[i]) and is_num(inner_example[i + 2])):
                         continue
@@ -623,9 +626,13 @@ def solve_example(example=None):
                         inner_example[i] = str(inner_example[i])
                 inner_example = [i for i in inner_example if i != 'R']
                 for i in range(len(inner_example) - 1):
-                    if inner_example[i] in ('sin', 'cos', 'tg', 'ctg', 'ln', 'lg') and is_num(inner_example[i + 1]):
-                        if inner_example[i] in ('sin', 'cos', 'tg', 'ctg'):
-                            inner_example[i] = C.trig(inner_example[i], C.rad_to_deg(inner_example[i + 1]), C.is_deg(inner_example[i + 1]))
+                    if inner_example[i] in ('d', 'arc', 'ln', 'lg') + ddarc_gen and is_num(inner_example[i + 1]):
+                        if inner_example[i] in ('dsin', 'dcos', 'dtg', 'dctg', 'sin', 'cos', 'tg', 'ctg'):
+                            inner_example[i] = C.trig(inner_example[i], inner_example[i + 1])
+                        elif inner_example[i] in ('arcsin', 'arccos', 'arctg', 'arcctg', 'darcsin', 'darccos', 'darctg', 'darcctg'):
+                            inner_example[i] = C.atrig(inner_example[i], inner_example[i + 1])
+                        elif inner_example[i] in ('d', 'arc'):
+                            inner_example[i] = C.deg(inner_example[i + 1]) if inner_example[i] == 'd' else C.rad(inner_example[i + 1])
                         elif inner_example[i] in ('ln', 'lg'):
                             inner_example[i] = C.log(inner_example[i + 1], (10, C.e)[inner_example[i] == 'ln'])
                         if type(inner_example[i]) is str:
@@ -1298,14 +1305,23 @@ def get_difference(old, new):
     return old
 
 
-def insertion_if_division_of_one(left_symbol, arg, example):
+def destroy_nearby_bracks(example, arg):
+    examped = exampled_value(example)
+    if re.search(fr'(?:d{r'|arc' * (arg != 'arc')})\($', examped[:cursor_index]) and re.match(r'\)', examped[cursor_index:]):
+        example = delete_in_example(example, -len(re.search(r'(?:\S|^)\s*$', example_value[:cursor_index])[0]))
+        example = delete_in_example(example, len(re.match(r'\s*(?:\S|$)', example_value[cursor_index:])[0]))
+        return insert_in_example(example, arg)
+    return insert_in_example(example, arg)
+
+
+def insertion_if_division_of_one(left_symbol, arg, example, destroy_nearby_scopes=False):
     if re.fullmatch(r'(?:[^0-9v\.]|^\s*)1', exampled_value(example)[max(cursor_index - 2, 0):cursor_index]):
         if arg in ('10^3', '10^6', '10^9', '10^12', '10^15', '10^18'):
             example = delete_in_example(example, -len(re.search(r'(?:\S|^)\s*$', example_value[:cursor_index])[0]))
             return insert_in_example(example, f'10^(-{arg[3:]})')
-        return insert_in_example(example, f'/{arg}')
+        return (insert_in_example, destroy_nearby_bracks)[destroy_nearby_scopes](example, f'/{arg}')
     else:
-        return insert_in_example(example, f'{'•' if left_symbol in '0123456789φπeထ)!' else ''}{arg}')
+        return (insert_in_example, destroy_nearby_bracks)[destroy_nearby_scopes](example, f'{'•' if left_symbol in '0123456789φπeထ)!' else ''}{arg}')
 
 
 def close_main_win_with_layout_switching(*key):
@@ -1487,12 +1503,17 @@ def key_calc(key, just_from_added_win=False):
                 example_value = delete_in_example(example_value, -len(re.search(r'\.\s*$', example_value[:cursor_index])[0]))
                 example_value = insert_in_example(example_value, '•0.')
         elif keysym in ('s', 'c', 't', 'C'):
-            example_value = insertion_if_division_of_one(symbol_left_from_cursor(), {'s': 'sin', 'c': 'cos', 't': 'tg', 'C': 'ctg'}[keysym], example_value)
+            example_value = insertion_if_division_of_one(symbol_left_from_cursor(), {'s': 'sin', 'c': 'cos', 't': 'tg', 'C': 'ctg'}[keysym], example_value, destroy_nearby_scopes=True)
             if symbol_right_from_cursor() != '(':
                 example_value = insert_in_example(example_value, '(')
                 example_value = insert_in_example(example_value, ')', right=True)
-        elif keysym in ('d', 'm'):
-            example_value = insert_in_example(example_value, f'{({'m': 'mod', 'd': 'div'}[keysym])}')
+        elif keysym == 'm':
+            example_value = insert_in_example(example_value, 'mod')
+        elif keysym == 'd':
+            example_value = insertion_if_division_of_one(symbol_left_from_cursor(), 'd', example_value)
+            if not re.match(r'\(|sin|cos|c?tg|arc', exampled_value(example_value)[cursor_index:]):
+                example_value = insert_in_example(example_value, '(')
+                example_value = insert_in_example(example_value, ')', right=True)
         elif keysym == 'l':
             example_value = insertion_if_division_of_one(symbol_left_from_cursor(), 'log(', example_value)
             example_value = insert_in_example(example_value, ')by' if symbol_right_from_cursor() == '(' else ')by()', right=True)
@@ -1505,11 +1526,16 @@ def key_calc(key, just_from_added_win=False):
             example_value = insertion_if_division_of_one(symbol_left_from_cursor(), 'π', example_value)
         elif keysym == 'r':
             example_value = insertion_if_division_of_one(symbol_left_from_cursor(), '√', example_value)
-        elif keysym in ('bar', 'backslash'):
+        elif keysym == 'bar':
             example_value = insert_in_example(example_value, '|')
-        elif keysym == 'a':
+        elif keysym == 'backslash':
             example_value = insertion_if_division_of_one(symbol_left_from_cursor(), '|', example_value)
             example_value = insert_in_example(example_value, '|', right=True)
+        elif keysym == 'a':
+            example_value = insertion_if_division_of_one(symbol_left_from_cursor(), 'arc', example_value, destroy_nearby_scopes=True)
+            if not re.match(r'\(|sin|cos|c?tg', exampled_value(example_value)[cursor_index:]):
+                example_value = insert_in_example(example_value, '(')
+                example_value = insert_in_example(example_value, ')', right=True)
         elif keysym in ('exclam', 'f'):
             example_value = insert_in_example(example_value, '!')
         elif keysym == 'percent':
@@ -1587,21 +1613,23 @@ def key_calc(key, just_from_added_win=False):
         elif keysym.isdigit():
             if re.search(r'(?:[^0-9\.]|^)\s*0\s*$', exampled_value(example_value)[:cursor_index]):
                 example_value = insert_in_example(example_value, f'.{keysym}')
-            else:
-                if symbol_left_from_cursor() == 'π':
-                    insert_in_example(example_value, f'/{keysym}')
-                elif re.search(r'•e$', exampled_value()[:cursor_index]):
-                    example_value = delete_in_example(example_value, -len(re.search(r'•\s*e\s*$', example_value[:cursor_index])[0]))
-                    example_value = insert_in_example(example_value, f'e{keysym}')
-                elif re.fullmatch(r'(?:[^0-9v\.]|^\s*)1/e$', exampled_value()[max(cursor_index - 4, 0):cursor_index]):
-                    example_value = delete_in_example(example_value, -len(re.search(r'1\s*/\s*e\s*$', example_value[:cursor_index])[0]))
+            elif symbol_left_from_cursor() == 'π':
+                example_value = insert_in_example(example_value, f'/{keysym}')
+            elif re.search(r'•e$', exampled_value()[:cursor_index]):
+                example_value = delete_in_example(example_value, -len(re.search(r'•\s*e\s*$', example_value[:cursor_index])[0]))
+                example_value = insert_in_example(example_value, f'e{keysym}')
+            elif re.fullmatch(r'(?:[^0-9v\.]|^\s*)1/e$', exampled_value()[max(cursor_index - 4, 0):cursor_index]):
+                example_value = delete_in_example(example_value, -len(re.search(r'1\s*/\s*e\s*$', example_value[:cursor_index])[0]))
+                example_value = insert_in_example(example_value, f'1e-{keysym}')
+                if re.search(fr'(?:(?<=^)|(?<![\dφπe]))\s*(?:\d+\.?\d*|\.\d+)•1e-{keysym}$', exampled_value()[:cursor_index]):
+                    example_value = delete_in_example(example_value, -len(re.search(fr'•\s*1\s*e\s*-\s*{keysym}$', example_value[:cursor_index])[0]))
                     example_value = insert_in_example(example_value, f'e-{keysym}')
-                elif symbol_left_from_cursor() == 'e':
-                    example_value = insert_in_example(example_value, keysym)
-                elif symbol_left_from_cursor() in 'φ)!':
-                    example_value = insert_in_example(example_value, f'•{keysym}')
-                else:
-                    example_value = insert_in_example(example_value, keysym)
+            elif symbol_left_from_cursor() == 'e':
+                example_value = insert_in_example(example_value, keysym)
+            elif symbol_left_from_cursor() in 'φ)!':
+                example_value = insert_in_example(example_value, f'•{keysym}')
+            else:
+                example_value = insert_in_example(example_value, keysym)
         elif keysym == 'Left':
             for i in reunite(united_symbols_with_scopes + united_symbols):  # сначала united_symbols_withscopes и только потом united_symbols
                 if (i_got_pattern := re.search(fr'\s*{i}\s*$', example_value[:cursor_index])):
@@ -2116,7 +2144,7 @@ def define_future_of_cursor(side):
                 if len(re.findall(r'l\s*o\s*g', replaced_abs_value[temp_cursor_index:temp_cursor_index + i])) == len(re.findall(r'b\s*y', replaced_abs_value[temp_cursor_index:temp_cursor_index + i])):
                     break
             temp_cursor_index += i
-        temp_cursor_index += len(re.match(r'sin|cos|tg|ctg|ln|lg|by|', replaced_abs_value[temp_cursor_index:])[0])
+        temp_cursor_index += len(re.match(r'(?:d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln|lg|by|', replaced_abs_value[temp_cursor_index:])[0])
         if replaced_abs_value[temp_cursor_index:temp_cursor_index + 1] in list('U(['):
             nxt_scope = replaced_abs_value[temp_cursor_index:temp_cursor_index + 1]
             open_brack, closed_brack = nxt_scope, 'u)]'[(nxt_scope == '(') + 2 * (nxt_scope == '[')]
@@ -2151,7 +2179,7 @@ def define_future_of_cursor(side):
             temp_cursor_index -= len(re.search(r'(?:(?<![a-df-uw-zA-DF-UW-Z])v\d*|\d*\.?\d*(?:e-?\d*\.?\d*)?|[φπe])$', replaced_abs_value[:temp_cursor_index])[0])
             if re.search(r'(?:\(|U|\[|^)-$', replaced_abs_value[:temp_cursor_index]):
                 temp_cursor_index -= 1
-        temp_cursor_index -= len(re.search(r'(?:sin|cos|tg|ctg|ln|lg|)$', replaced_abs_value[:temp_cursor_index])[0])
+        temp_cursor_index -= len(re.search(r'(?:(?:d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln|lg|)$', replaced_abs_value[:temp_cursor_index])[0])
         if re.search(r'by$', replaced_abs_value[:temp_cursor_index]):
             for i in range(len(replaced_abs_value[:temp_cursor_index]) - 2, -1, -1):
                 if replaced_abs_value[i:temp_cursor_index].count('log') == replaced_abs_value[i:temp_cursor_index].count('by'):
@@ -2270,7 +2298,7 @@ def paste_text(*key):
     if indexes_of_selection is None:
         indexes_of_selection = {'start': cursor_index, 'end': cursor_index}
     
-    replaced_paste = pyperclip.paste().replace('E', '#').lower().replace('#', 'E')
+    replaced_paste = pyperclip.paste().replace('E+', 'E').replace('E', '#').lower().replace('#', 'E')
     
 
     if re.search(r'2\d{3}\.(?:0\d|11|12)\.(?:[0-3]\d|31) (?:[01]\d|2[0-3])(?::[0-5]\d){2}', replaced_paste):
@@ -2300,7 +2328,7 @@ def paste_text(*key):
                 item2 = item2.replace('pi', 'π').replace('fi', 'φ')
 
                 item2 = item2.replace('tan', 'tg').replace('cot', 'ctg')
-                item2 = re.sub(fr'({num_construct})%([0-9φπe.(]|sin|cos|tg|ctg|ln|lg|log|√)', r'\1/100•\2', item2)
+                item2 = re.sub(fr'({num_construct})%([0-9φπe.(]|sin|cos|c?tg|ln|lg|log|√)', r'\1/100•\2', item2)
                 item2 = re.sub(fr'({num_construct})%', r'\1/100', item2)
                 item2 = re.sub(r' {2,}', r' ', item2.replace('÷', '/').replace(':', '/').replace('//', 'div').replace('%', 'mod'))
                 item2 = re.sub(r' ?([^0-9\.]) ?', r'\1', item2)
@@ -2308,10 +2336,10 @@ def paste_text(*key):
                 item2 = re.sub(r'(?<=[0-9φπeထ)!])E', r'•10^', item2)
                 item2 = re.sub(r'(?<=[^√])E', r'1•10^', item2).replace('E', '•10^')
                 
-                item2 = re.sub(r'(sin|cos|tg|ctg|ln|lg|log)(\d+\.?\d*|\.\d+)(\()', r'\1#\2#\3', item2)
+                item2 = re.sub(r'((?:d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln|lg|log)(\d+\.?\d*|\.\d+)(\()', r'\1#\2#\3', item2)
                 while re.search(mul_between_digits_and_constants := r'([φπe\)])([0-9φπe\.\(])', item2):
                     item2 = re.sub(mul_between_digits_and_constants, r'\1•\2', item2)
-                while re.search(mul_between_digits_and_constants := r'([0-9φπe\.\)])([φπe\(]|sin|cos|tg|ctg|ln|lg|log)', item2):
+                while re.search(mul_between_digits_and_constants := r'([0-9φπe\.\)])([φπe\(]|d(?!i)|arc|sin|cos|c?tg|ln|lg|log)', item2):
                     item2 = re.sub(mul_between_digits_and_constants, r'\1•\2', item2)
                 item2 = re.sub(r'(\d)√', r'\1•√', item2)
                 i = item2.replace('#', '')
@@ -2344,10 +2372,10 @@ def paste_text(*key):
             for indx, copied_res in enumerate(copied_results):
                 copied_res = copied_res.replace('•10^', 'e').replace(' ', '')
                 copied_res = copied_res.split('e')
-                print(copied_res[0])
                 copied_res[0] = str(Decimal(copied_res[0]).quantize(Decimal('.00'), ROUND_HALF_UP))
-                copied_results[indx] = 'e'.join(copied_res)
-                print(copied_res)
+                copied_results[indx] = 'E'.join(copied_res)
+                if 'E' not in copied_results[indx] and float(copied_results[indx]) >= 10 ** 15:
+                    copied_results[indx] = f'{float(copied_results[indx]):.2e}'.replace('e+', 'E')
             pyperclip.copy(('\t', '\n')[prior_side].join(copied_results))
             return
 
@@ -2372,18 +2400,18 @@ def paste_text(*key):
             replaced_paste = replaced_paste.replace('pi', 'π').replace('fi', 'φ')
             
             replaced_paste = replaced_paste.replace('tan', 'tg').replace('cot', 'ctg')
-            replaced_paste = re.sub(fr'({num_construct})%([0-9φπe.(]|sin|cos|tg|ctg|ln|lg|log|√)', r'\1/100•\2', replaced_paste)
+            replaced_paste = re.sub(fr'({num_construct})%([0-9φπe.(]|d(?!i)|arc|sin|cos|c?tg|ln|lg|log|√)', r'\1/100•\2', replaced_paste)
             replaced_paste = re.sub(fr'({num_construct})%', r'\1/100', replaced_paste)
             replaced_paste = re.sub(r' {2,}', r' ', replaced_paste.replace('÷', '/').replace(':', '/').replace('//', 'div').replace('%', 'mod'))
             replaced_paste = re.sub(r' ?([^0-9\.]) ?', r'\1', replaced_paste)
             replaced_paste = replaced_paste.replace('base', 'by')
             replaced_paste = re.sub(r'(?<=[0-9φπeထ)!])E', '•10^', replaced_paste)
             replaced_paste = re.sub(r'(?<=[^√])E', '1•10^', replaced_paste).replace('E', '•10^')
-            replaced_paste = re.sub(r'(sin|cos|tg|ctg|ln|lg|log)(\d+\.?\d*|\.\d+)(\()', r'\1#\2#\3', replaced_paste)
+            replaced_paste = re.sub(r'((?:d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln|lg|log)(\d+\.?\d*|\.\d+)(\()', r'\1#\2#\3', replaced_paste)
             while re.search(mul_between_digits_and_constants := r'([φπe\)])([0-9φπe\.\(])', replaced_paste):
                 replaced_paste = re.sub(mul_between_digits_and_constants, r'\1•\2', replaced_paste)
-            while re.search(mul_between_digits_and_constants := r'([0-9φπe\.\)])([φπe\(]|sin|cos|tg|ctg|ln|lg|log)', replaced_paste):
-                replaced_paste = re.sub(mul_between_digits_and_constants, r'\1•\2', replaced_paste)     
+            while re.search(mul_between_digits_and_constants := r'([0-9φπe\.\)])([φπe\(]|d(?!i)|arc|sin|cos|c?tg|ln|lg|log)', replaced_paste):
+                replaced_paste = re.sub(mul_between_digits_and_constants, r'\1•\2', replaced_paste)
             replaced_paste = re.sub(r'(\d)√', r'\1•√', replaced_paste)
             replaced_paste = replaced_paste.replace('#', '')
 
