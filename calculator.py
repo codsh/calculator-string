@@ -357,7 +357,7 @@ def modify_info(example):
               f'(в радианах, если угол {'ир' * (not 'd' in example)}рациональный, иначе в градусах)')
     if example in (f'{i}{j}' for i in ('', 'd') for j in ('arcsin()', 'arccos()', 'arctg()', 'arcctg()')):
         atemp = {'sin': 'синус', 'cos': 'косинус', 'tg': 'тангенс', 'ctg': 'котангенс'}[example.replace('d', '')[3:-2]]
-        a += ('градусный ' * ('d' in example) + 'арк' + atemp + f'(число, которое вернёт {atemp} от искомых {('радиан', 'градусов')['d' in example]})')
+        a += ('тёмный радиатор: ' * ('d' in example) + 'арк' + atemp + f'(число, которое вернёт {atemp} от искомых {('радиан', 'градусов')['d' not in example]})')
     if example in ('^2', '^3', '^4', '^5'):
         a += {'^2': 'квадрат', '^3': 'куб', '^4': 'гиперкуб', '^5': 'метакуб | петакуб'}[example]
     if example in ('10^100', '10^303', '10^3003', '10^10^100'):
@@ -864,6 +864,7 @@ def scroll_text(string_shift):
     
 def added_win_control_keypress(event):
     set_last_func_is_ctrl_shift_scroll(False)
+    set_del_mode(False)
     keysym = event.keysym.lower() if len(event.keysym) == 1 else event.keysym
     if keysym == 'space':
         entry_box.focus_set()
@@ -1152,6 +1153,7 @@ def resize_and_retheme_canvas_drawings():
     
 def manage_not_main_window_close():
     set_last_func_is_ctrl_shift_scroll(False)
+    set_del_mode(False)
     added_win.withdraw()
     added_win.title(invisible_win_title)
     entry_box.focus_set() 
@@ -1773,6 +1775,7 @@ def key_calc(key, just_from_added_win=False):
         
 def real_key_calc(key, just_from_added_win=False):
     set_last_func_is_ctrl_shift_scroll(False)
+    set_del_mode(False)
     key_calc(key, just_from_added_win)
     if hasattr(key, 'keysym') and key.keysym not in ('Escape', 'Tab', 'Up', 'Down', 'Control_L', 'Control_R', 'Shift_L', 'Shift_R', 'Alt_L', 'Alt_R', 'Caps_Lock', 'Win_L' 'y', 'z', 'Y', 'Z'):
         add_to_last_examples_if_selection_or_cursor_change()
@@ -1781,6 +1784,7 @@ def real_key_calc(key, just_from_added_win=False):
 def save_example_to_history(*key):
     global history_of_calculations, i_history, i_last_example, added_win, settings, example_value, cursor_index, can_backspace, indexes_of_selection, keyboard_layout_memory
     set_last_func_is_ctrl_shift_scroll(False)
+    set_del_mode(False)
     indexes_of_selection = None
     perfect_ex_for_ans = recents['recent examples'][-1][2]
     for i in range(2):
@@ -1893,24 +1897,7 @@ def insert_values_in_inputs(new_entry_box_value, new_result_value, date_time_rou
         recents['recent examples'].pop(0)
 
 
-scroll_step_counter = 0
 last_scroll_action_time = 0
-
-def check_scroll_step():
-    global scroll_step_counter, last_scroll_action_time
-    current_time = time.time()
-    
-    # Если с момента предыдущего скролла прошло не меньше 0.5 секунд, значит это совершенно новый жест
-    if current_time - last_scroll_action_time < 0.5:
-        scroll_step_counter = 0
-    else:
-        scroll_step_counter = 1
-    last_scroll_action_time = current_time
-    
-    # Возвращаем текущий номер шага прокрутки
-    return scroll_step_counter
-
-
 # Глобальные переменные для отслеживания времени скролла
 last_wheel_time = 0
 
@@ -2010,6 +1997,7 @@ def ctrl_z(*self):
 last_func_is_ctrl_shift_scroll = False
 def set_last_func_is_ctrl_shift_scroll(last_is_ctrl_shift_scroll=True):
     global last_func_is_ctrl_shift_scroll
+
     last_func_is_ctrl_shift_scroll = last_is_ctrl_shift_scroll
     if not is_window_ghost(added_win) and last_func_is_ctrl_shift_scroll:
         make_window_ghost(added_win)
@@ -2017,6 +2005,10 @@ def set_last_func_is_ctrl_shift_scroll(last_is_ctrl_shift_scroll=True):
         make_window_normal(added_win)
     else:
         pass
+
+def set_del_mode(del_mode=True):
+    global deletion_mode
+    deletion_mode = del_mode
 
 
 close_history_after_scroll = None
@@ -2455,6 +2447,7 @@ def change_selection_colors_to_invisible():
     
 def save_index(event):
     set_last_func_is_ctrl_shift_scroll(False)
+    set_del_mode(False)
     if not ((event.state & 0x0001) or (event.state & 0x0002) or (event.state & 0x0003)):  # не (левая кнопка (Button1) или средняя кнопка (Button2) или правая кнопка (Button3) мыши зажата)
         recents['cursor before moving calc'] = entry_box.index('insert')
     
@@ -2462,6 +2455,7 @@ def save_index(event):
 def on_pushing_left_button(event):
     global last_y
     set_last_func_is_ctrl_shift_scroll(False)
+    set_del_mode(False)
     recents['mouse coords'] = {'x': event.x_root, 'y': event.y_root}
     last_y = event.y_root
     
@@ -2476,7 +2470,7 @@ def on_freeing_left_button(event):
         change_selection_colors_to_normal(settings['theme'] == 'light')
     set_main_focus(event)
     recents['cursor before moving calc'] = entry_box.index('insert')
-    
+
 
 def move_main_win(event):
     global indexes_of_selection, cursor_index
@@ -2549,7 +2543,16 @@ for val, func in {'a': select_all, 'c': copy_text, 'x': cut_text, 'v': paste_tex
                   's': save_example_to_history, 'w': close_main_win_with_layout_switching, 'h': (lambda key: create_added_win('h'))}.items():
     for key in (val, val.upper()):
         main_win.bind(f'<Control-{key}>', func)
-main_win.bind('<ButtonPress-3>', lambda key: manage_not_main_window_close() if added_win.title() != invisible_win_title else create_added_win('h'))
+
+def manage_all_of_that_right_button_shit(key):
+    if deletion_mode:
+        cut_text(key)
+        set_del_mode(False)
+    elif added_win.title() != invisible_win_title:
+        manage_not_main_window_close()
+    else:
+        create_added_win('h')
+main_win.bind('<ButtonPress-3>', manage_all_of_that_right_button_shit)
         
         
 def ctrl_backspace(key):
@@ -2580,7 +2583,6 @@ main_win.bind('<Control-space>', lambda key: (pyautogui.hotkey('Alt', 'Tab'), ti
 
 main_win.bind('<Motion>', save_index)
 main_win.bind('<Control-MouseWheel>', lambda key: change_text_size(increase=key.delta > 0))
-main_win.bind('<Shift-MouseWheel>', lambda key: (ctrl_z, ctrl_y)[key.delta < 0]())
 
 
 scroll_timeout = 0
@@ -2601,6 +2603,29 @@ def scroll_handler(key):
         set_last_func_is_ctrl_shift_scroll()
         scroll_timeout = 0
 
+
+deletion_mode = False
+def backspace_undo_handler(key):
+    global scroll_timeout, last_scroll_action_time
+    if time.time() - last_scroll_action_time < scroll_timeout:
+        last_scroll_action_time = time.time()
+        return
+    last_scroll_action_time = time.time()
+    if not example_value:
+        set_del_mode(False)
+    if not deletion_mode:
+        if (i_last_example == 'past' and key.delta > 0 or i_last_example == 'future' and key.delta < 0):
+            set_del_mode(True)
+            scroll_timeout = 0.05
+        else:
+            (ctrl_z, ctrl_y)[key.delta < 0]()
+            scroll_timeout = 0
+    else:
+        [set_cursor_shift_to_the(key, define_future_of_cursor(('left', 'right')[key.delta > 0])) for _ in range(abs(key.delta) // 120)]
+        scroll_timeout = 0
+
+
+main_win.bind('<Shift-MouseWheel>', backspace_undo_handler) # lambda key: (ctrl_z, ctrl_y)[key.delta < 0]())
 main_win.bind('<MouseWheel>', scroll_handler)
 
 main_win.bind('<ButtonRelease-1>', on_freeing_left_button)
@@ -2837,7 +2862,6 @@ def check_theme_or_geometry_change():
     elif curr_time - tape_creation_time > 1.5:
         destroy_tape()
         tape_creation_time = 10 ** 100
-            
     main_win.after(50, check_theme_or_geometry_change)  # проверять каждую двадцатую секунды
 last_theme = is_dark_theme()
 check_theme_or_geometry_change()
@@ -2848,6 +2872,8 @@ if recents['win theme alike calc'] and is_dark_theme() != (settings['theme'] == 
 
 main_win.bind('<Control-t>', change_theme)
 main_win.bind('<Control-T>', change_theme)
+# main_win.bind('<Control-g>', integrate_gui)
+# main_win.bind('<Control-G>', integrate_gui)
 
 calculate_result()
 

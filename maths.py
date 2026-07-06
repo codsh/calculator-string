@@ -161,7 +161,7 @@ class C:
 
     @classmethod
     def atrig(cls, func, val):
-        make_info_deg = 'd' in func
+        make_info_deg = 'd' not in func
         func = func.replace('d', '')
         val = Decimal(val)
         unc = func[3:]
