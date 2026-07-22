@@ -3,6 +3,7 @@ import pyautogui
 import ctypes
 import re
 
+from collections import Counter
 from decimal import *
 
 FILES = 'data'
@@ -18,7 +19,13 @@ def rond(num, rounding_accuracy):
 invisible_win_title = 'невидимое окно'
 temp_scopes, temp_scopes_with_smth = r'(?:\(-?\)|U-?u)', r'(?:\(.*?\)|U.*?u)'
 calc_geometry_state_change_expression = r'Максимум \d+ символ(?:|а|ов)|Калькулятор теперь (?:вверху|в центре|внизу)'
-pattern_checking_on_empty_scopes = fr'(?:[+\-/•:^√]|mod|div)*(?:(?:sin|cos|c?tg|lg|ln){temp_scopes}|log{temp_scopes}by{temp_scopes_with_smth}|log{temp_scopes_with_smth}by{temp_scopes}|{temp_scopes})'
+pattern_checking_on_empty_scopes = fr'(?:[+\-/•:^√]|mod|div)*(?:(?:(?:d(?!iv))?(?:arc)?(?:sin|cos|c?tg)|d?arc|lg|ln){temp_scopes}|log{temp_scopes}by{temp_scopes_with_smth}|log{temp_scopes_with_smth}by{temp_scopes}|{temp_scopes})'
+
+
+def count_matches(list1, list2):
+    intersection = Counter(list1) & Counter(list2)
+    return sum(intersection.values())
+
 
 def reunite(words):
     return [f'{(r'\s*').join(['\\' + symb if symb in '()|' else symb for symb in word])}' for word in words]
@@ -44,13 +51,38 @@ correct_answer_num_symbols = '0123456789Ee-+.•^() '
 last_time_main_win_geometry_change = 0
 last_val_before_geometry_change = 'если это вставится, значение использовали до его определения !!!техническая ошибка разработчиков!!!'
 last_time_round_change = 0
-num_construct = r'((?:\d+\.?\d*|\.\d+)(e-?\d*\.?\d*)?|φπe)'
+num_construct = r'((?:\d+\.?\d*|\.\d+)(?:e-?\d*\.?\d*)?|[φπe])'
+tokenator = r'(d?(?:arc)?(?:sin|cos|c?tg)|d?arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\))'
+super_tokenator = r'(sin|cos|c?tg|arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\)|[\dφπe.])'
 
 max_denominator = 10000
 
 max_history_length, min_history_length = 10000, 100
 word_ends1 = ('е', 'я', 'й')
 word_ends2 = ('', 'а', 'ов')
+
+
+def relatives(arg1, arg2):
+    relative = 0
+    for (arg1, arg2) in ((arg1, arg2), (arg2, arg1)):
+        if arg1 == arg2:
+            relative = max(relative, 1)
+        if (arg1, arg2) in (('sin', 'cos'), ('tg', 'ctg'), ('lg', 'ln')):
+            relative = max(relative, 0.9)
+        if 'arc' + arg1 == arg2 or 'd' + arg1 == arg2 or arg1 == 'arc' and arg2 == 'd' or (arg1, arg2) in (('sin', 'tg'), ('cos', 'ctg'), ('lg', 'log'), ('ln', 'log')):
+            relative = max(relative, 0.85)
+        if 'darc' + arg1 == arg2:
+            relative = max(relative, 0.8)
+        if re.search(r'sin|cos|c?tg|d|arc', arg1) and re.search(r'sin|cos|c?tg|d|arc', arg2):
+            relative = max(relative, 0.65)
+        if re.search(fr'-?{num_construct}', arg1) and re.search(fr'-?{num_construct}', arg2):
+            relative = max(relative, count_matches(arg1, arg2) / max(len(arg1), len(arg2)))
+        for indx, i in enumerate(('√', '!', 'mod', 'div', '^', '|', '•', ':', '+', '-')):
+            if arg1 == i != arg2:
+                relative = max(relative, 1 - (0.98, 0.95, 0.9, 0.6, 0.35)[indx // 2])
+
+    relative = max(relative, 0.1)
+    return relative
 
 
 def clear_q_with_content(example, cursor_place):

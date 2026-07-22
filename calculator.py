@@ -1,7 +1,7 @@
 import time
 from tkinter import *
 from tkinter import font, ttk, SEL_FIRST, SEL_LAST
-from math import log
+from math import log, sqrt
 import re
 import random
 from decimal import *
@@ -15,6 +15,7 @@ import pyautogui
 from maths import *
 from info import *
 pyautogui.PAUSE = 0
+from collections import Counter
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 
@@ -240,17 +241,18 @@ def create_perfect_example(non_perfect_example):
     for i in range(len(non_perfect_example) - 2):
         if non_perfect_example[i + 1] == '|':
             non_perfect_example = non_perfect_example[:i + 1] + 'Uu'[non_perfect_example[i] in '0123456789!)uπφe' or bool(re.match(r'[+•:^!\)]|mod|div', non_perfect_example[i + 2:]))] + non_perfect_example[i + 2:]
-    
+
+    old_non_perf_examp = non_perfect_example
     non_perfect_example = clean_pattern_empty_scopes(non_perfect_example)
-           
+    if not non_perfect_example:
+        return old_non_perf_examp
     non_perfect_example = f'({non_perfect_example})'
     
     split_non_perfect_example = []
     for no_brack, brack in zip(re.split(r'[()Uu]', non_perfect_example), re.findall(r'[()Uu]', non_perfect_example)):
         split_non_perfect_example.append(no_brack)
         split_non_perfect_example.append(brack)
-    split_non_perfect_example = ['R'] + [i for i in split_non_perfect_example if i] + ['R']
-    
+    split_non_perfect_example = ['R', 'R', 'R'] + [i for i in split_non_perfect_example if i] + ['R', 'R', 'R']
     while '(' in split_non_perfect_example or 'U' in split_non_perfect_example:
         for i in range(1, len(split_non_perfect_example) - 3):
             if split_non_perfect_example[i] + split_non_perfect_example[i + 2] not in ('()', 'Uu'):
@@ -283,7 +285,7 @@ def create_perfect_example(non_perfect_example):
         non_perfect_example = re.sub(r'\((-(?:[φπe]|[0-9]+(?:\.[0-9]+)?))\)', r'\1', non_perfect_example)
     non_perfect_example = re.sub(r'\(([φπe]|[0-9]+(?:\.[0-9]+)?)\)', r'\1', non_perfect_example)
     
-    non_perfect_example = re.sub(r'((?:d(?!i))?(?:arc)?(?:sin|cos|c?tg)|ln|lg|by)(\d+(?:\.\d+)?|\.\d+|e)', r'\1(\2)', non_perfect_example)
+    non_perfect_example = re.sub(r'((?:d(?!iv))?(?:arc)?(?:sin|cos|c?tg)|ln|lg|by)(\d+(?:\.\d+)?|\.\d+|e)', r'\1(\2)', non_perfect_example)
     non_perfect_example = re.sub(r'(ln|lg)([φπe])', r'\1(\2)', non_perfect_example)
     non_perfect_example = re.sub(r'(mod|div)([φπe])', r'\1(\2)', non_perfect_example)
     non_perfect_example = re.sub(r'([φπe])(mod|div)', r'(\1)\2', non_perfect_example)
@@ -294,7 +296,7 @@ def create_perfect_example(non_perfect_example):
     if non_perfect_example[:1] == '(' and non_perfect_example[-1:] == ')':
         non_perfect_example = non_perfect_example[1:-1]
     
-    non_perfect_example = re.sub(r'(?<![a-z])\(((?:(?:d(?!i))?(?:arc)?(?:sin|cos|ctg|tg)|ln|lg|by)(?:\|.*?\||\(.*?\)))\)', r'\1', non_perfect_example)
+    non_perfect_example = re.sub(r'(?<![a-z])\(((?:(?:d(?!iv))?(?:arc)?(?:sin|cos|ctg|tg)|ln|lg|by)(?:\|.*?\||\(.*?\)))\)', r'\1', non_perfect_example)
     non_perfect_example = re.sub(r'(?<![a-z])\((log(?:\|.*?\||\(.*?\))by(?:\|.*?\||\(.*?\)))\)', r'\1', non_perfect_example)
     
     return non_perfect_example
@@ -878,6 +880,8 @@ def added_win_control_keypress(event):
         create_added_win('?')
     elif keysym == 'h':
         create_added_win('h')
+    elif keysym == 'f':
+        rank_text()
     else:
         return disable_editing_added_win_text(event)
 
@@ -1274,7 +1278,6 @@ def clean_from_scopes_with_emptyness(value):
             value = value[:i + 1] + 'Uu'[value[i] in '0123456789!)ueπφ' or bool(re.match(r'[+•:^!\)]|mod|div', value[i + 2:]))] + value[i + 2:]
             
     value = value[1:-1]
-    
     value = clean_pattern_empty_scopes(value)
     value = re.sub(r'[Uu]', '|', value)
     value = re.sub(r'(?:[\+\-•:^,]|mod|div)(?=\))', r'', f'({value})')[1:-1]
@@ -1370,7 +1373,7 @@ def key_calc(key, just_from_added_win=False):
         add_to_last_examples_if_selection_or_cursor_change()
     
     if not bypass:
-        keysym = key.keysym if len(key.keysym) > 1 or key.keysym in 'MBTQIPUJCF' else key.keysym.lower()
+        keysym = key.keysym if len(key.keysym) > 1 or key.keysym in 'MBTQIPUJCFDA' else key.keysym.lower()
             
         if keysym in ('Tab', 'Up', 'Down', 'Control_L', 'Control_R', 'Shift_L', 'Shift_R', 'Alt_L', 'Alt_R', 'Caps_Lock', 'Win_L'):
             return
@@ -1509,8 +1512,8 @@ def key_calc(key, just_from_added_win=False):
             if symbol_right_from_cursor() != '(':
                 example_value = insert_in_example(example_value, '(')
                 example_value = insert_in_example(example_value, ')', right=True)
-        elif keysym == 'm':
-            example_value = insert_in_example(example_value, 'mod')
+        elif keysym in ('m', 'D'):
+            example_value = insert_in_example(example_value, ('mod', 'div')[keysym == 'D'])
         elif keysym == 'd':
             example_value = insertion_if_division_of_one(symbol_left_from_cursor(), 'd', example_value)
             if not re.match(r'\(|sin|cos|c?tg|arc', exampled_value(example_value)[cursor_index:]):
@@ -1530,7 +1533,7 @@ def key_calc(key, just_from_added_win=False):
             example_value = insertion_if_division_of_one(symbol_left_from_cursor(), '√', example_value)
         elif keysym == 'bar':
             example_value = insert_in_example(example_value, '|')
-        elif keysym == 'backslash':
+        elif keysym in ('backslash', 'A'):
             example_value = insertion_if_division_of_one(symbol_left_from_cursor(), '|', example_value)
             example_value = insert_in_example(example_value, '|', right=True)
         elif keysym == 'a':
@@ -2007,8 +2010,10 @@ def set_last_func_is_ctrl_shift_scroll(last_is_ctrl_shift_scroll=True):
         pass
 
 def set_del_mode(del_mode=True):
-    global deletion_mode
+    global deletion_mode, cursor_shift_intermediate_steps_at_del_mode
     deletion_mode = del_mode
+    if not del_mode:
+        cursor_shift_intermediate_steps_at_del_mode = []
 
 
 close_history_after_scroll = None
@@ -2109,7 +2114,8 @@ def set_main_focus(event):
     
     add_to_last_examples_if_selection_or_cursor_change()
     
-    
+
+cursor_shift_intermediate_steps_at_del_mode = []
 def define_future_of_cursor(side):
     replaced_abs_value = replace_abs_signs(example_value)
     temp_cursor_index = max(0, cursor_index)
@@ -2291,7 +2297,6 @@ def paste_text(*key):
         indexes_of_selection = {'start': cursor_index, 'end': cursor_index}
     
     replaced_paste = pyperclip.paste().replace('E+', 'E').replace('E', '#').lower().replace('#', 'E')
-    
 
     if re.search(r'2\d{3}\.(?:0\d|11|12)\.(?:[0-3]\d|31) (?:[01]\d|2[0-3])(?::[0-5]\d){2}', replaced_paste):
         # Алгоритм замены для истории
@@ -2316,10 +2321,11 @@ def paste_text(*key):
                 item2 = re.sub(fr'({num_construct})(?:radical|root|r)', r'\1#√', item2)
                 for i in (('sqrt', '√'), ('cbrt', '3#√')):
                     item2 = re.sub(fr'({num_construct}){i[0]}', fr'\1•{i[1]}', item2)
-                item2 = re.sub(r'radical|root|sqrt|cbrt|r', r'√', item2)
+                item2 = re.sub(r'radical|root|sqrt|cbrt|(?<!a)r(?!c)', r'√', item2)
                 item2 = item2.replace('pi', 'π').replace('fi', 'φ')
 
                 item2 = item2.replace('tan', 'tg').replace('cot', 'ctg')
+                item2 = re.sub(r'a(sin|cos|c?tg)', r'arc\1', item2)
                 item2 = re.sub(fr'({num_construct})%([0-9φπe.(]|sin|cos|c?tg|ln|lg|log|√)', r'\1/100•\2', item2)
                 item2 = re.sub(fr'({num_construct})%', r'\1/100', item2)
                 item2 = re.sub(r' {2,}', r' ', item2.replace('÷', '/').replace(':', '/').replace('//', 'div').replace('%', 'mod'))
@@ -2388,10 +2394,11 @@ def paste_text(*key):
             replaced_paste = re.sub(fr'({num_construct})(?:radical|root|r)', r'\1#√', replaced_paste)
             for i in (('sqrt', '√'), ('cbrt', '3#√')):
                 replaced_paste = re.sub(fr'({num_construct}){i[0]}', fr'\1•{i[1]}', replaced_paste)
-            replaced_paste = re.sub(r'radical|root|sqrt|cbrt|r', r'√', replaced_paste)
+            replaced_paste = re.sub(r'radical|root|sqrt|cbrt|(?!a)r(?!c)', r'√', replaced_paste)
             replaced_paste = replaced_paste.replace('pi', 'π').replace('fi', 'φ')
             
             replaced_paste = replaced_paste.replace('tan', 'tg').replace('cot', 'ctg')
+            replaced_paste = re.sub(r'a(sin|cos|c?tg)', r'arc\1', replaced_paste)
             replaced_paste = re.sub(fr'({num_construct})%([0-9φπe.(]|d(?!i)|arc|sin|cos|c?tg|ln|lg|log|√)', r'\1/100•\2', replaced_paste)
             replaced_paste = re.sub(fr'({num_construct})%', r'\1/100', replaced_paste)
             replaced_paste = re.sub(r' {2,}', r' ', replaced_paste.replace('÷', '/').replace(':', '/').replace('//', 'div').replace('%', 'mod'))
@@ -2537,10 +2544,87 @@ def move_added_win_scrolling_horizontally(event):
     
 def has_selection():
     return type(indexes_of_selection) is dict and indexes_of_selection['start'] != indexes_of_selection['end']
+
+
+def filter_from_empty_and_sort_row(var):
+    return list(filter(lambda x: x, sorted(list(var), reverse=True)))
+
+
+def tokenate(var, supersplit=False):
+    return re.sub((tokenator, super_tokenator)[supersplit], r' \1 ', var).split()
+
+
+def get_coeff_of_token_overlaying(tokened_query, tokened_data):
+    tokened_query = tokened_query[:]
+    tokened_data = tokened_data[:]
+    coeff = 0
+    for overlaying_token_length in range(len(tokened_query), 0, -1):
+        is_overlayed = False
+        for i in range(len(tokened_query) - overlaying_token_length + 1):
+            query_part = tokened_query[i:i + overlaying_token_length]
+            for j in range(len(tokened_data) - overlaying_token_length + 1):
+                if query_part == tokened_data[j:j + overlaying_token_length]:
+                    coeff += 4 ** Decimal(overlaying_token_length - (query_part.count('(') + query_part.count(')'))) + 4 ** (Decimal(overlaying_token_length - (query_part.count('(') + query_part.count(')'))) - Decimal(len(tokened_data)))
+                    tokened_query[i:i + overlaying_token_length], tokened_data[j:j + overlaying_token_length] = [], []
+                    is_overlayed = True
+                    break
+            if is_overlayed:
+                break
+    return coeff
+
+
+def rank_text(key=None):
+    itogo_matches_power_sums = []
+    create_added_win('h')
+    param, text_param = create_perfect_example(entry_box.get()), re.sub(r' (?![\(\[]?\w|\d{2}:)', r'', text_entry.get('1.0', 'end'))
+    if not param:
+        return
+    tokened_param = tokenate(param)
+    microtokened_param = tokenate(param, supersplit=True)
+    num_tokens_of_param = [i for i in tokened_param if re.fullmatch(num_construct, i)]
+    # digit_tokens_of_param = list(''.join(num_tokens_of_param))
+    param = re.sub(r'(\d{2})(\.|/|-)(\d{2})\2(\d{4})', r'\4.\3.\1', param)
+    param = re.sub(r'(\d{2})/(\d{2})/(\d{2})', r'\1:\2:\3', param)
     
+    splitted_txt_param = text_param.split('\n')
+    for indx in range(0, len(splitted_txt_param), 4):
+        txt_row = f'{'='.join(splitted_txt_param[indx:indx + 2])}'
+        tokened_txt_row = tokenate(txt_row)
+        microtokened_txt_row = tokenate(txt_row, supersplit=True)
+        num_tokens_of_txt_row = [i for i in tokened_txt_row if re.fullmatch(num_construct, i)]
+        # digit_tokens_of_txt_row = list(''.join(num_tokens_of_txt_row))
+
+        # the_most_powerul_sorting_algorythm
+        points = [0, 0, 0]
+        if txt_row:
+            # Альфа класс: совпадение выражения
+            points[0] += (1 - len(txt_row.replace(param, '', 1)) / len(txt_row))
+            # Бета класс: совпадают части выражения, причём порядок кусков не важен, более того, могут совпадать части чисел
+            points[1] += get_coeff_of_token_overlaying(tokened_param, tokened_txt_row) + get_coeff_of_token_overlaying(microtokened_param, microtokened_txt_row) / 5
+            # Гамма класс: совпадают части чисел
+            points[1] += get_coeff_of_token_overlaying(num_tokens_of_param, num_tokens_of_txt_row)
+
+        if indx % 4 == 0:
+            val = re.sub(r'(\d{4})\.(\d{2})\.(\d{2})(\d{2}):(\d{2}):(\d{2})', r'\1.\2.\3 \4:\5:\6', '\n'.join(splitted_txt_param[indx:indx + 4]))
+            itogo_matches_power_sums.append((val, points))
+    text_entry.delete(1.0, END)
+    # for i in sorted(itogo_matches_power_sums[::4], key=lambda x: (x[1], len(x[0])), reverse=True):
+    #     print(i)
+
+    color1 = ('#' + 'b0' * 3, '#' + '2f' * 3)[settings['theme'] == 'light']
+    color2 = ('#' + '90' * 3, '#' + '5f' * 3)[settings['theme'] == 'light']
+    [text_entry.tag_config(f'history_{color1}', foreground=color1), text_entry.tag_config(f'history_{color2}', foreground=color2)]
+    tags = (None, f'history_{color1}', f'history_{color1}', f'history_{color2}')
+    ranked_info = '\n'.join(map(lambda x: x[0], sorted(itogo_matches_power_sums, key=lambda x: (x[1], len(x[0])), reverse=True)))
+    [text_entry.insert(END, val + '\n', tags[(i + 1) % 4]) for i, val in enumerate(ranked_info.split('\n'))]
+    for i in range(ranked_info.count('\n') + 1):
+        text_entry.tag_add('highlight', f'{i + 1}.0', f'{i + 1}.end')
+    text_entry.focus_set()
+    text_entry.tag_add(SEL, '1.0', 'end')
+
 
 for val, func in {'a': select_all, 'c': copy_text, 'x': cut_text, 'v': paste_text, 'y': ctrl_y, 'z': ctrl_z,
-                  's': save_example_to_history, 'w': close_main_win_with_layout_switching, 'h': (lambda key: create_added_win('h'))}.items():
+                  's': save_example_to_history, 'w': close_main_win_with_layout_switching, 'h': (lambda key: create_added_win('h')), 'f': rank_text}.items():
     for key in (val, val.upper()):
         main_win.bind(f'<Control-{key}>', func)
 
@@ -2604,9 +2688,10 @@ def scroll_handler(key):
         scroll_timeout = 0
 
 
+cursor_shift_intermediate_steps_at_del_mode = []
 deletion_mode = False
 def backspace_undo_handler(key):
-    global scroll_timeout, last_scroll_action_time
+    global scroll_timeout, last_scroll_action_time, cursor_shift_intermediate_steps_at_del_mode
     if time.time() - last_scroll_action_time < scroll_timeout:
         last_scroll_action_time = time.time()
         return
@@ -2621,7 +2706,14 @@ def backspace_undo_handler(key):
             (ctrl_z, ctrl_y)[key.delta < 0]()
             scroll_timeout = 0
     else:
-        [set_cursor_shift_to_the(key, define_future_of_cursor(('left', 'right')[key.delta > 0])) for _ in range(abs(key.delta) // 120)]
+        for _ in range(abs(key.delta) // 120):
+            print(cursor_shift_intermediate_steps_at_del_mode)
+            if cursor_shift_intermediate_steps_at_del_mode and key.delta and (key.delta > 0) == (cursor_shift_intermediate_steps_at_del_mode[-1] > cursor_index):
+                set_cursor_shift_to_the(key, cursor_shift_intermediate_steps_at_del_mode[-1])
+                cursor_shift_intermediate_steps_at_del_mode.pop()
+            else:
+                cursor_shift_intermediate_steps_at_del_mode.append(cursor_index)
+                set_cursor_shift_to_the(key, define_future_of_cursor(('left', 'right')[key.delta > 0]))
         scroll_timeout = 0
 
 
