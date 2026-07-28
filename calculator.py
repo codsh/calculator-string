@@ -228,20 +228,22 @@ def is_num(symbols, num_symbs=list('0123456789.-Ee+')):
 #             return ''
         
 
-def create_perfect_example(non_perfect_example):    
+def create_perfect_example(non_perfect_example):
+    
     non_perfect_example = rescope_example(non_perfect_example)
     
     if not non_perfect_example:
         return
-    non_perfect_example = non_perfect_example.replace(' ', '')
+    
+    non_perfect_example = re.sub(r'(?<![а-яА-ЯЁё"\'«»“”])(?<![а-яА-ЯЁё"\'«»“”]\))\s+(?!\(?[а-яА-ЯЁё"\'«»“”])', '', non_perfect_example)
     non_perfect_example = non_perfect_example.replace('by', ')by').replace('log', 'log(')
     non_perfect_example = f'({non_perfect_example})'.replace('-)', ')')[1:-1]
     non_perfect_example = re.sub(r'(?:[\+\-•/^,\.]|mod|div)(?=\))', r'', f'({non_perfect_example})')
-    
+
     for i in range(len(non_perfect_example) - 2):
         if non_perfect_example[i + 1] == '|':
             non_perfect_example = non_perfect_example[:i + 1] + 'Uu'[non_perfect_example[i] in '0123456789!)uπφe' or bool(re.match(r'[+•:^!\)]|mod|div', non_perfect_example[i + 2:]))] + non_perfect_example[i + 2:]
-
+    
     old_non_perf_examp = non_perfect_example
     non_perfect_example = clean_pattern_empty_scopes(non_perfect_example)
     if not non_perfect_example:
@@ -279,7 +281,7 @@ def create_perfect_example(non_perfect_example):
             except IndexError:
                 pass
             break
-        
+    
     non_perfect_example = ''.join([i for i in split_non_perfect_example if i != 'R'])
     if re.fullmatch(r'\((?:-(?:[φπe]|[0-9]+(?:\.[0-9]+)?))\)', non_perfect_example):
         non_perfect_example = re.sub(r'\((-(?:[φπe]|[0-9]+(?:\.[0-9]+)?))\)', r'\1', non_perfect_example)
@@ -298,7 +300,7 @@ def create_perfect_example(non_perfect_example):
     
     non_perfect_example = re.sub(r'(?<![a-z])\(((?:(?:d(?!iv))?(?:arc)?(?:sin|cos|ctg|tg)|ln|lg|by)(?:\|.*?\||\(.*?\)))\)', r'\1', non_perfect_example)
     non_perfect_example = re.sub(r'(?<![a-z])\((log(?:\|.*?\||\(.*?\))by(?:\|.*?\||\(.*?\)))\)', r'\1', non_perfect_example)
-    
+
     return non_perfect_example
 
 
@@ -338,8 +340,10 @@ def modify_info(example):
     a = '– '
     if not example:
         return calculator_greeting
+    if example == 'v':
+        return '– переменная, после которой пишется порядковый номер ряда или колонки, значения которой нужно подставить вместо переменной'
     if example == calculator_greeting.lower():
-        a += 'приветствие'
+        return '– приветствие'
     if example in ('ထ', '+ထ', '-ထ'):
         a += {'ထ': 'Бесконечность', '+ထ': 'положительная Бесконечность', '-ထ': 'отрицательная Бесконечность'}[example]
     if example in ('log()by()', 'ln()', 'lg()'):
@@ -360,8 +364,10 @@ def modify_info(example):
     if example in (f'{i}{j}' for i in ('', 'd') for j in ('arcsin()', 'arccos()', 'arctg()', 'arcctg()')):
         atemp = {'sin': 'синус', 'cos': 'косинус', 'tg': 'тангенс', 'ctg': 'котангенс'}[example.replace('d', '')[3:-2]]
         a += ('тёмный радиатор: ' * ('d' in example) + 'арк' + atemp + f'(число, которое вернёт {atemp} от искомых {('радиан', 'градусов')['d' not in example]})')
-    if example in ('^2', '^3', '^4', '^5'):
-        a += {'^2': 'квадрат', '^3': 'куб', '^4': 'гиперкуб', '^5': 'метакуб | петакуб'}[example]
+    if example in ('^', '^2', '^3', '^4', '^5'):
+        a += {'^': 'степень', '^2': 'квадрат', '^3': 'куб', '^4': 'гиперкуб', '^5': 'метакуб | петакуб'}[example]
+    if example in ('+', '-', '•', '/'):
+         a = ''
     if example in ('10^100', '10^303', '10^3003', '10^10^100'):
         a += {'10^100': 'гугол', '10^303': 'центиллион', '10^3003': 'миллиллион', '10^10^100': 'гуголплекс'}[example]
     if re.fullmatch(r'1(?: 000){2,8}', example):
@@ -377,12 +383,11 @@ def q_solve_example(example):
 def solve_example(example=None):
     global perfect_example, ROUND_ANSWER_TO_MANUALLY, last_time_round_change
     perfect_example = ''
+    
     example = (entry_box.get() if example is None else example).lower()
     modified_info = modify_info(example)
-    
     if modified_info is not None:
         return modified_info
-    example = example.replace(' ', '')
 
     cursor_or_selected_end_index = max(indexes_of_selection.values()) if indexes_of_selection and indexes_of_selection != 'по умолчанию' else cursor_index
     if example.count('q') == 1 and cursor_or_selected_end_index >= example.index('q') + 1:
@@ -413,7 +418,7 @@ def solve_example(example=None):
             if example[j:] in ending_symbols:
                 example = example[:j]
                 break
-            
+    
     for j in range(-3, 0):
         if example[j:] in ending_symbols:
             return 'Ошибка в конце примера!'
@@ -459,13 +464,18 @@ def solve_example(example=None):
         return 'Почему символ "$" есть в примере?'
     pi_replaced, e_replaced, fi_replaced = f'({C.pi}+0)', f'({C.e}+0)', f'({C.fi}+0)'
 
-    
     pre_example = f'({example})'
     
     for i in range(len(pre_example) - 2):
         if pre_example[i + 1] == '|':
             pre_example = pre_example[:i + 1] + 'Uu'[pre_example[i] in '0123456789!)ueπφ' or bool(re.match(r'[+•:^!\)]|mod|div', pre_example[i + 2:]))] + pre_example[i + 2:]
     example = pre_example[1:-1]
+    example = example.replace(' ', '')
+    if text_tokens := re.findall(fr'\s*(?:{letters}+[0-9]*{syntax}*|{letters}*{syntax}+)', example):
+        for text_token in text_tokens:
+            if re.search(r'[а-яА-ЯЁё]', text_token):
+                example = example.replace(text_token, '')
+
     example = clean_pattern_empty_scopes(example)
     example = re.sub(r'[Uu]', '|', example)
     example = re.sub(r'(?<!^)(?<![+\-•/:^(])(?<!d)(?<!tg|ln|lg|by)(?<!mod|div|sin|cos|ctg|log|arc)e-(\d*\.?\d*)', r'$(-\1)', example)
@@ -473,6 +483,7 @@ def solve_example(example=None):
     if re.search(r'[eπφ][eπφ(]|[eπφ)][eπφ]', example):
         return 'Рядом с константой не может быть ни скобки, ни константы!'
     example = example.replace('π', pi_replaced).replace('φ', fi_replaced).replace('e', e_replaced).replace('$', 'e')
+    example = re.sub(r'v(?=[^0-9]|$)', 'v1', example)
     example = example.replace('.', ',').replace(' ', '').replace('/', ':')
     example = re.sub(r'(?<!a)r(?!c)', '$', example.replace('√', '$').replace('k', '$'))
     example = example.replace('by', ')by').replace('log', 'log(')
@@ -517,7 +528,6 @@ def solve_example(example=None):
             if example[i + 1] in ('$', 'e'):
                 example = f'{example[:i + 1]}{(('2', '1')[example[i + 1] == 'e'], '')[example[i] in '0123456789,)u!']}{('k', '&')[example[i + 1] == 'e']}{example[i + 2:]}'
     example = example.replace('&', 'e')
-
     if example and example[1] in '+•' and example[2:3] != '-':
         example = example[:1] + example[2:]
     example = example.replace('+-', '-').replace('--', '+').replace('•-', '•(0-1)•').replace(':-', ':(0-1):')
@@ -543,7 +553,7 @@ def solve_example(example=None):
     if '#' in example:
         return 'Отладочная информация, нельзя допустить # от других символов, оставив его для E'
     example = example.replace('e', '#')
-    bad_symbols = re.findall(r'[^0-9+\-•:^,@%!()Uu#]', example)
+    bad_symbols = re.findall(r'[^0-9v+\-•:^,@%!()Uu#]', example)
     if bad_symbols:
         return f'Почему символ "{bad_symbols[0] if bad_symbols[0] not in ('@', '%') else ('mod', 'div')[bad_symbols[0] == '@']}" есть в примере?'
     example = example.replace('#', 'e')
@@ -553,8 +563,17 @@ def solve_example(example=None):
         else:
             return 'Ошибка в начале примера!'
     example = example.replace('%', 'mod').replace('@', 'div')
+    if bad_var := re.search(r'[0-9,]v|v[,0]', example):
+        return f'Сочетание "{bad_var}" в примере недопустимо!'
+    if re.search(r'(?<!di)v', example):
+        example_without_div = example.replace('div', 'dithoutvees')
+        vars = set(map(int, re.findall(r'(?<=v)\d+', example_without_div)))
+        example = example_without_div.replace('dithoutvees', 'div')
+        if len(vars) != max(vars):
+            return f'В формуле должны быть все vX, образующие множество {{v1, v2 ... v{max(vars)}}}'
+        return f'– вставь Майкрософт таблицу из {max(vars)} рядов или колонок. Далее выдели ячейки Ворд и вставь туда скопированную за тебя таблицу ответов'
     if re.search(r'[(U](?:[+•:^),u]|mod|div)|(?:[+•:^(,U-]|mod|div)[u)!]|[0-9,][(U]|[u)!][0-9,]', example):
-        return 'Около скобки, модуля, факториала или числа e, π или φ — ошибка!'
+        return 'Около скобки, модуля, факториала, числа e, π, φ — ошибка!'
     
     if re.search(r',\d+,', example):
         return 'Почему в одном числе две запятые или точки?'
@@ -580,6 +599,7 @@ def solve_example(example=None):
     example = f'({example})'.replace('^-', '&').replace(',', '.').replace('(-', '(0-').replace('U-', 'U0-')
     example = re.sub(r'(\+|!|div|mod|U|u|•|:|\^|-|\(|\)|(?:d(?!iv))?(?:arc)?(?:sin|cos|c?tg)|ln|lg|k|log|by|e|d|arc)', r' \1 ', example)
     example_for_calculations = [i for i in example.replace('&', ' ^- ').split() if i]
+
     perfect_example = create_perfect_example(pre_example)
     
     if not perfect_example:
@@ -763,8 +783,8 @@ def solve_example(example=None):
         return raw_res
     except ZeroDivisionError:
         return 'На ноль или малое число делить нельзя! (±ထ)'
-    # except (OverflowError, Overflow, InvalidOperation):
-    #     return 'Слишком длинные числа! Или возможно где-то ошибка!'
+    except (OverflowError, Overflow, InvalidOperation):
+        return 'Слишком длинные числа! Или возможно где-то ошибка!'
     except ValueError:
         return 'Где-то ошибка!'
     
@@ -783,7 +803,7 @@ def calculate_result():
     example_value = entry_box.get().lower()
     example_res = solve_example()
     result.insert(END, f'{get_writing_form(example_res)}{example_res}')
-    
+
     if add_to_recents(example_value):
         recents['recent examples'].append([example_value, result.get().strip('='), perfect_example, cursor_index])
     if len(recents['recent examples']) > 20:
@@ -1408,7 +1428,7 @@ def key_calc(key, just_from_added_win=False):
                     calculate_result()
                     change_width_of_entry(entry_box.get(), entry_box, result)
                     bypass = True
-    
+
     if not bypass:
         if (symbol_left_from_cursor() == '.' and (len(keysym) == 1 and keysym in 'sctlngpefraodmxbivyujwzkMBTQPEUJCF' or keysym in keys_after_dot)):
             example_value = insert_in_example(example_value, '5')
@@ -1432,6 +1452,8 @@ def key_calc(key, just_from_added_win=False):
         elif keysym == 'grave':
             example_value = ''
             cursor_index = 0
+        elif keysym == '??' or re.fullmatch(r'[А-Яа-яЁё]', symbol_left_from_cursor()) and key.char in list(letters + syntax):
+            example_value = insert_in_example(example_value, key.char)
         elif keysym == 'v':
             example_value = insertion_if_division_of_one(symbol_left_from_cursor(), 'v', example_value)
             # elif keysym == 'v':
@@ -1584,7 +1606,7 @@ def key_calc(key, just_from_added_win=False):
             if symbol_left_from_cursor() in '•/^√':
                 example_value = insert_in_example(example_value, '2')
                 example_value = insert_in_example(example_value, '+')
-            elif symbol_left_from_cursor() not in '0123456789φπeထ)|!' and keysym != 'plus':
+            elif symbol_left_from_cursor() not in '0123456789φπevထ)|!' and keysym != 'plus':
                 example_value = insert_in_example(example_value, '1')
             else:
                 example_value = insert_in_example(example_value, '+')
@@ -1616,19 +1638,22 @@ def key_calc(key, just_from_added_win=False):
         elif keysym == 'numbersign':
             example_value = insert_in_example(example_value, '#')
         elif keysym.isdigit():
-            if re.search(r'(?:[^0-9\.]|^)\s*0\s*$', exampled_value(example_value)[:cursor_index]):
+            if re.search(r'(?:[^0-9.]|^)\s*0\s*$', exampled_value(example_value)[:cursor_index]):
                 example_value = insert_in_example(example_value, f'.{keysym}')
             elif symbol_left_from_cursor() == 'π':
                 example_value = insert_in_example(example_value, f'/{keysym}')
             elif re.search(r'•e$', exampled_value()[:cursor_index]):
                 example_value = delete_in_example(example_value, -len(re.search(r'•\s*e\s*$', example_value[:cursor_index])[0]))
                 example_value = insert_in_example(example_value, f'e{keysym}')
-            elif re.fullmatch(r'(?:[^0-9v\.]|^\s*)1/e$', exampled_value()[max(cursor_index - 4, 0):cursor_index]):
+            elif re.fullmatch(r'(?:[^0-9v.]|^\s*)1/e$', exampled_value()[max(cursor_index - 4, 0):cursor_index]):
                 example_value = delete_in_example(example_value, -len(re.search(r'1\s*/\s*e\s*$', example_value[:cursor_index])[0]))
                 example_value = insert_in_example(example_value, f'1e-{keysym}')
                 if re.search(fr'(?:(?<=^)|(?<![\dφπe]))\s*(?:\d+\.?\d*|\.\d+)•1e-{keysym}$', exampled_value()[:cursor_index]):
                     example_value = delete_in_example(example_value, -len(re.search(fr'•\s*1\s*e\s*-\s*{keysym}$', example_value[:cursor_index])[0]))
                     example_value = insert_in_example(example_value, f'e-{keysym}')
+            elif re.search(r'(?<![ev])(?<![0-9.]e-)(?:\d+\.?\d*|\.\d+)/e$', exampled_value()):
+                example_value = delete_in_example(example_value, -len(re.search(r'(?<=[0-9.])\s*/\s*e\s*$', example_value[:cursor_index])[0]))
+                example_value = insert_in_example(example_value, f'e-{keysym}')
             elif symbol_left_from_cursor() == 'e':
                 example_value = insert_in_example(example_value, keysym)
             elif symbol_left_from_cursor() in 'φ)!':
@@ -1641,7 +1666,9 @@ def key_calc(key, just_from_added_win=False):
                     cursor_index -= len(i_got_pattern[0])
                     break
             else:
-                if (i_got_pattern := re.search(fr'(?:\s*\S|^)\s*$', example_value[:cursor_index])):
+                if (i_got_pattern := re.search(fr'(?: *[а-яА-ЯЁё]|^) *$', example_value[:cursor_index])):
+                    cursor_index -= len(i_got_pattern[0])
+                elif (i_got_pattern := re.search(fr'(?:\s*\S|^)\s*$', example_value[:cursor_index])):
                     cursor_index -= len(i_got_pattern[0])
         elif keysym == 'Right':
             for i in reunite(united_symbols_with_scopes + united_symbols):
@@ -1673,18 +1700,19 @@ def key_calc(key, just_from_added_win=False):
     num_is_part_of_deleted = re.search(r'[0-9φπe]', difference1) and not re.search(r'[0-9φπe]', difference2)
     
     if keysym in ('grave', 'Return', 'BackSpace', 'Delete', 'apostrophe', 'quotedbl') or num_is_part_of_deleted and is_num(recent_examples[-2][1], correct_answer_num_symbols):
+        
         indexes_of_selection = None
         perfect_ex_for_ans = ''
         if num_is_part_of_deleted and keysym in ('Delete', 'BackSpace', 'grave', 'changed text'):
             perfect_ex_for_ans = recent_examples[-2][2]
         elif keysym in ('apostrophe', 'quotedbl', 'Return'):
             perfect_ex_for_ans = recent_examples[-1][2]
+
         for i in range(2):
             for j in range(-3, 0):
                 if perfect_ex_for_ans[j:] in ending_symbols:
                     perfect_ex_for_ans = perfect_ex_for_ans[:j]
                     break
-        
         perfect_ex_for_ans = clean_from_scopes_with_emptyness(perfect_ex_for_ans)
         
         split_old_history_of_calculations = history_of_calculations.split('\n')
@@ -2119,9 +2147,8 @@ cursor_shift_intermediate_steps_at_del_mode = []
 def define_future_of_cursor(side):
     replaced_abs_value = replace_abs_signs(example_value)
     temp_cursor_index = max(0, cursor_index)
-    letters, syntax = r'[а-яА-ЯЁё"«»“”-]', r'[.,!?;:/]'
-    text_token = (re.match(fr'\s*(?:{letters}+{syntax}*|{letters}*{syntax}+)', replaced_abs_value[temp_cursor_index:]),
-                  re.search(fr'(?:{letters}+{syntax}*|{letters}*{syntax}+)\s*$', replaced_abs_value[:temp_cursor_index]))[side == 'left']
+    text_token = (re.match(fr'\s*(?:{letters}+[0-9]*{syntax}*|{letters}*{syntax}+)', replaced_abs_value[temp_cursor_index:]),
+                  re.search(fr'(?:{letters}+[0-9]*{syntax}*|{letters}*{syntax}+)\s*$', replaced_abs_value[:temp_cursor_index]))[side == 'left']
     
     i = len(text_token[0]) if text_token is not None and text_token[0] not in ('-', '/') else None
     if side in ('right', 'left') and i:
@@ -2349,7 +2376,7 @@ def paste_text(*key):
                 if not re.search(r'[а-яА-ЯЁё]', item2):
                     replaced_paste[index1][index2] = replace_paste_symbols(replaced_paste[index1][index2])
         
-        if len(set(list(map(len, replaced_paste)))) == 1 and 'v' in example_value:
+        if len(set(list(map(len, replaced_paste)))) == 1 and re.search(r'(?<!di)v', example_value):
             table_data_size = {1: len(replaced_paste[0]), 0: len(replaced_paste)}  # 1 - width, 0 - height (for comftable boolean logic work)
             prior_side = table_data_size[1] > table_data_size[0]
             if not f'v{table_data_size[prior_side]}' in example_value:
@@ -2357,9 +2384,10 @@ def paste_text(*key):
             copied_results = []
             old_examp_val = example_value
             for item1 in (zip(*replaced_paste), replaced_paste)[prior_side]:
+                example_value = re.sub(r'(?<!di)v(?!\d)', 'v1', example_value)
                 for index2, item2 in enumerate(item1):
                     # if re.fullmatch(num_construct, item2) is None: item2 = f'({item2})'
-                    example_value = example_value.replace(f'v{index2 + 1}', item2)
+                    example_value = re.sub(fr'(?<!di)v{index2 + 1}', item2, example_value)
                 cursor_index = len(example_value)
                 make_it_future()
                 save_example_to_history()
@@ -2550,8 +2578,8 @@ def filter_from_empty_and_sort_row(var):
     return list(filter(lambda x: x, sorted(list(var), reverse=True)))
 
 
-def tokenate(var, supersplit=False):
-    return re.sub((tokenator, super_tokenator)[supersplit], r' \1 ', var).split()
+def tokenate(var, supersplit=False, ultrasplit=False):
+    return re.sub((tokenator, super_tokenator, ultra_tokenator)[supersplit + 2 * ultrasplit], r' \1 ', var).split()
 
 
 def get_coeff_of_token_overlaying(tokened_query, tokened_data):
@@ -2581,7 +2609,9 @@ def rank_text(key=None):
         return
     tokened_param = tokenate(param)
     microtokened_param = tokenate(param, supersplit=True)
+    ultratokened_param = tokenate(param, ultrasplit=True)
     num_tokens_of_param = [i for i in tokened_param if re.fullmatch(num_construct, i)]
+    word_tokens_of_param = [i for i in tokened_param if re.fullmatch(word_construct, i)]
     # digit_tokens_of_param = list(''.join(num_tokens_of_param))
     param = re.sub(r'(\d{2})(\.|/|-)(\d{2})\2(\d{4})', r'\4.\3.\1', param)
     param = re.sub(r'(\d{2})/(\d{2})/(\d{2})', r'\1:\2:\3', param)
@@ -2591,7 +2621,9 @@ def rank_text(key=None):
         txt_row = f'{'='.join(splitted_txt_param[indx:indx + 2])}'
         tokened_txt_row = tokenate(txt_row)
         microtokened_txt_row = tokenate(txt_row, supersplit=True)
+        ultratokened_txt_row = tokenate(txt_row, ultrasplit=True)
         num_tokens_of_txt_row = [i for i in tokened_txt_row if re.fullmatch(num_construct, i)]
+        word_tokens_of_txt_row = [i for i in tokened_txt_row if re.fullmatch(word_construct, i)]
         # digit_tokens_of_txt_row = list(''.join(num_tokens_of_txt_row))
 
         # the_most_powerul_sorting_algorythm
@@ -2599,17 +2631,19 @@ def rank_text(key=None):
         if txt_row:
             # Альфа класс: совпадение выражения
             points[0] += (1 - len(txt_row.replace(param, '', 1)) / len(txt_row))
-            # Бета класс: совпадают части выражения, причём порядок кусков не важен, более того, могут совпадать части чисел
-            points[1] += get_coeff_of_token_overlaying(tokened_param, tokened_txt_row) + get_coeff_of_token_overlaying(microtokened_param, microtokened_txt_row) / 5
-            # Гамма класс: совпадают части чисел
+            # Бета класс: совпадают части выражения, причём порядок кусков не важен, более того, могут совпадать числа, при сравнении частей чисел на совпадение алгоритм слишком долгим становится
+            points[1] += get_coeff_of_token_overlaying(tokened_param, tokened_txt_row) + get_coeff_of_token_overlaying(microtokened_param, microtokened_txt_row)
             points[1] += get_coeff_of_token_overlaying(num_tokens_of_param, num_tokens_of_txt_row)
+            points[1] += get_coeff_of_token_overlaying(word_tokens_of_param, word_tokens_of_txt_row)
+            # Мета класс: совпадает хотя бы символьный состав чисел и букв
+            points[2] += get_coeff_of_token_overlaying(ultratokened_param, ultratokened_txt_row)
 
         if indx % 4 == 0:
             val = re.sub(r'(\d{4})\.(\d{2})\.(\d{2})(\d{2}):(\d{2}):(\d{2})', r'\1.\2.\3 \4:\5:\6', '\n'.join(splitted_txt_param[indx:indx + 4]))
             itogo_matches_power_sums.append((val, points))
     text_entry.delete(1.0, END)
-    # for i in sorted(itogo_matches_power_sums[::4], key=lambda x: (x[1], len(x[0])), reverse=True):
-    #     print(i)
+    for i in sorted(itogo_matches_power_sums, key=lambda x: (x[1], len(x[0])), reverse=False):
+        print(i)
 
     color1 = ('#' + 'b0' * 3, '#' + '2f' * 3)[settings['theme'] == 'light']
     color2 = ('#' + '90' * 3, '#' + '5f' * 3)[settings['theme'] == 'light']
@@ -2707,12 +2741,12 @@ def backspace_undo_handler(key):
             scroll_timeout = 0
     else:
         for _ in range(abs(key.delta) // 120):
-            print(cursor_shift_intermediate_steps_at_del_mode)
             if cursor_shift_intermediate_steps_at_del_mode and key.delta and (key.delta > 0) == (cursor_shift_intermediate_steps_at_del_mode[-1] > cursor_index):
                 set_cursor_shift_to_the(key, cursor_shift_intermediate_steps_at_del_mode[-1])
                 cursor_shift_intermediate_steps_at_del_mode.pop()
-            else:
-                cursor_shift_intermediate_steps_at_del_mode.append(cursor_index)
+            elif key.delta and ((key.delta < 0) != (cursor_index == 0) or (key.delta > 0) != (cursor_index == len(example_value))):
+                if cursor_shift_intermediate_steps_at_del_mode[-1:] != [cursor_index]:
+                    cursor_shift_intermediate_steps_at_del_mode.append(cursor_index)
                 set_cursor_shift_to_the(key, define_future_of_cursor(('left', 'right')[key.delta > 0]))
         scroll_timeout = 0
 

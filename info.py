@@ -33,7 +33,7 @@ def reunite(words):
 darc_generator = tuple([f'{i}{j}' for i in ('darc', 'arc', 'd') for j in ('sin', 'cos', 'ctg', 'tg', '')])
 ddarc_gen = tuple([f'{i}{j}' for i in ('darc', 'arc', 'd', '') for j in ('sin', 'cos', 'ctg', 'tg')])
 
-united_symbols = darc_generator + ('log', 'div', 'mod', 'sin', 'cos', 'ctg') + ('ln', 'lg', 'tg', 'by')
+united_symbols = ('div', 'mod') + darc_generator + ('log', 'sin', 'cos', 'ctg') + ('ln', 'lg', 'tg', 'by')
 united_symbols_with_scopes = (tuple(f'{i}{j}' for j in ('|', '(') for i in darc_generator)
      + ('log(', 'sin(', 'cos(', 'ctg(', ')by(') + ('log|', 'sin|', 'cos|', 'ctg|', '|by|', '|by(', ')by|') + ('ln|', 'lg|', 'tg|') + ('ln(', 'lg(', 'tg('))
 united_symbols_without_scopes = darc_generator + ('sin', 'cos', 'ctg', 'tg', 'ln', 'lg')  # порядок важен, сначала котангенс а лишь потом тангенс, чтобы удалялся ctg а не c tg
@@ -48,12 +48,15 @@ last_key = None
 rounds = [zeros(_) for _ in (400, 380, 360, 305, 100)]
 ending_symbols = list('+-•:^,%@k.') + list(united_symbols)
 correct_answer_num_symbols = '0123456789Ee-+.•^() '
+letters, syntax = r'[а-яА-ЯЁё"\'«»“”()-]', r'[.,!?;:/]'
 last_time_main_win_geometry_change = 0
 last_val_before_geometry_change = 'если это вставится, значение использовали до его определения !!!техническая ошибка разработчиков!!!'
 last_time_round_change = 0
 num_construct = r'((?:\d+\.?\d*|\.\d+)(?:e-?\d*\.?\d*)?|[φπe])'
+word_construct = '[а-яА-ЯЁё]+'
 tokenator = r'(d?(?:arc)?(?:sin|cos|c?tg)|d?arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\))'
 super_tokenator = r'(sin|cos|c?tg|arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\)|[\dφπe.])'
+ultra_tokenator = fr'([а-яА-ЯЁё]|\d|{super_tokenator})'
 
 max_denominator = 10000
 
@@ -128,7 +131,7 @@ text_help_calc = ("  строка-калькулятор | быстрый вво
                   " ⬥ '^2' [u] (похожа на график x^2), '^3' [j] (на клавиатуре похожа на x^3), '^4' [U] (x^4), '^5' [J] (x^5), '^(-I)' [y]\n"
                   " ⬥ поставит 3 нуля [z] (zeros — нули), тысячу [k] (kilo), млн [M] (million), млрд [B] (billion), трлн [T] (trillion), квдрлн [Q] (quadrillion)\n"
                   " ⬥ при [цифра] после '0' введётся '.' с цифрой, при [z] после '.' введётся на одну '0' меньше, после '0' тоже самое с '.' впереди\n"
-                  " ⬥ [v] вводит v (variable), после него введите число, которое подскажет таблице, куда вставлять значения из строк или столбцов в порядке нумерации\n"
+                  " ⬥ [v] (variable) вводит переменную v, после него введите число, которое подскажет таблице, куда вставлять значения из строк или столбцов в порядке нумерации\n"
                   " ⬥ после получения результата вычисления нескольких рядов или колонок, они астоматически скопируются, это ответы можно вставить в поля таблицы\n"
                   " ⬥ '•' ставится автоматически. При 'I' после 'π' или '1' появится '/' (удобно вводить радианы 'k•π/m'), после любого знака [•] введёт '2•'\n"
                   " ⬥ '•' не ставится при [|], только с [a], так как пример можно понять по-разному ('|5+5|7+8|2+2|', как '|5+5|•7+8•|2+2|' или '|5+5•|7+8|•2+2|')\n"
