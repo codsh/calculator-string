@@ -18,8 +18,11 @@ def rond(num, rounding_accuracy):
 
 invisible_win_title = 'невидимое окно'
 temp_scopes, temp_scopes_with_smth = r'(?:\(-?\)|U-?u)', r'(?:\(.*?\)|U.*?u)'
+oper_for_empty_scopes = r'(?:[+\-/•:^√]|mod|div)'
+func_for_empty_scopes = r'(?:(?:d(?!iv))?(?:arc)?(?:sin|cos|c?tg)|d?arc|lg|ln)'
+empty_funcs_scopes_construction = fr'(?:{func_for_empty_scopes}{temp_scopes}|log{temp_scopes}by{temp_scopes_with_smth}|log{temp_scopes_with_smth}by{temp_scopes}|{temp_scopes})'
 calc_geometry_state_change_expression = r'Максимум \d+ символ(?:|а|ов)|Калькулятор теперь (?:вверху|в центре|внизу)'
-pattern_checking_on_empty_scopes = fr'(?:[+\-/•:^√]|mod|div)*(?:(?:(?:d(?!iv))?(?:arc)?(?:sin|cos|c?tg)|d?arc|lg|ln){temp_scopes}|log{temp_scopes}by{temp_scopes_with_smth}|log{temp_scopes_with_smth}by{temp_scopes}|{temp_scopes})'
+pattern_checking_on_empty_scopes = fr'(?:{oper_for_empty_scopes}*{empty_funcs_scopes_construction}(?={oper_for_empty_scopes})|{empty_funcs_scopes_construction})'
 
 
 def count_matches(list1, list2):
@@ -48,14 +51,14 @@ last_key = None
 rounds = [zeros(_) for _ in (400, 380, 360, 305, 100)]
 ending_symbols = list('+-•:^,%@k.') + list(united_symbols)
 correct_answer_num_symbols = '0123456789Ee-+.•^() '
-letters, syntax = r'[а-яА-ЯЁё"\'«»“”()-]', r'[.,!?;:/]'
+letters_and_inwords, letters_and_not_example_like_inwords, syntax = r'[а-яА-ЯЁё"\'«»“”()-]', r'[а-яА-ЯЁё"\'«»“”]', r'[.,!?;:/]'
 last_time_main_win_geometry_change = 0
 last_val_before_geometry_change = 'если это вставится, значение использовали до его определения !!!техническая ошибка разработчиков!!!'
 last_time_round_change = 0
-num_construct = r'((?:\d+\.?\d*|\.\d+)(?:e-?\d*\.?\d*)?|[φπe])'
+num_construct = r'((?:\d+\.?\d*|\.\d+)(?:[eE]-?\d*\.?\d*)?|[φπeE])'
 word_construct = '[а-яА-ЯЁё]+'
 tokenator = r'(d?(?:arc)?(?:sin|cos|c?tg)|d?arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\))'
-super_tokenator = r'(sin|cos|c?tg|arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\)|[\dφπe.])'
+super_tokenator = r'(sin|cos|c?tg|arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\)|[\dφπeE.])'
 ultra_tokenator = fr'([а-яА-ЯЁё]|\d|{super_tokenator})'
 
 max_denominator = 10000

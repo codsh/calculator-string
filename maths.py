@@ -22,7 +22,7 @@ def replace_abs_signs(val):
     val = f'({val})'
     for i in range(len(val) - 1):
         if val[i + 1] == '|':
-            val = val[:i + 1] + 'Uu'[val[i] in '0123456789!)uπφe'] + val[i + 2:]
+            val = val[:i + 1] + 'Uu'[val[i] in '0123456789!)uπφeE'] + val[i + 2:]
     return val[1:-1]
 
 
@@ -110,6 +110,7 @@ class C:
     
     @classmethod
     def is_rational(cls, angle):
+        angle = angle.rstrip('0')
         if '.' not in angle or len(angle.split('.')[-1]) < 10 or bool(re.findall(r'(\d+)\1{7}', angle.split('.')[-1][:100])):
             return True
         angle = Decimal(angle)
