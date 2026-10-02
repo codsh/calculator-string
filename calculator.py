@@ -332,6 +332,40 @@ def rescope_example(unscoped_example):
     return '(' * scope_counter + unscoped_example + ')' * scope_counter
     
 
+def adapt_trig_depending_if_there_is_pi_in_it(unadapted_example_with_Uu):
+    modified_unadaped = unadapted_example_with_Uu.replace(f'({C.pi}+0)'.replace('.', ','), 'π')
+    modified_unadaped = re.sub(r'd?(?:sin|cos|c?tg)', 'D', modified_unadaped)
+
+    modified_unadaped = re.sub(r'[^()UuπD]', '', modified_unadaped)
+    for indx, i in enumerate(modified_unadaped):
+        if i != 'D':
+            continue
+        after_func_modified_unadaped = modified_unadaped[indx + 1:]
+        if after_func_modified_unadaped[:1] == 'π':
+            modified_unadaped = modified_unadaped[:indx] + 'R' + modified_unadaped[indx + 1:]
+            continue
+        for jndx in range(1, len(after_func_modified_unadaped) + 1):
+            first_letter_after_func = after_func_modified_unadaped[:1]
+            after_func_part = after_func_modified_unadaped[:jndx]
+            if first_letter_after_func in ('(', 'U') and after_func_part.count(first_letter_after_func) - after_func_part.count((')', 'u')[first_letter_after_func == 'U']) == 0:
+                if 'π' in after_func_part:
+                    modified_unadaped = modified_unadaped[:indx] + 'R' + modified_unadaped[indx + 1:]
+                break
+
+    unadapted_example_with_Uu = re.sub(r'(d?(?:sin|cos|c?tg))', r' \1 ', unadapted_example_with_Uu)
+    unadapted_example_with_Uu = unadapted_example_with_Uu.split()
+    modified_unadaped = re.sub(r'[^RD]', '', modified_unadaped)
+    cnt_trig = -1
+    for indx, i in enumerate(unadapted_example_with_Uu):
+        if re.fullmatch(r'd?(?:sin|cos|c?tg)', i):
+            cnt_trig += 1
+            if (modified_unadaped[cnt_trig] == 'R') == ('d' in i):
+                unadapted_example_with_Uu[indx] = 'd' + i.replace('d', '')
+            else:
+                unadapted_example_with_Uu[indx] = i.replace('d', '')
+    return ''.join(unadapted_example_with_Uu).replace('π', f'({C.pi}+0)'.replace('.', ','))
+
+
 def modify_info(example):
     a = '– '
     if not example:
@@ -384,6 +418,9 @@ def solve_example(example=None):
     modified_info = modify_info(example)
     if modified_info is not None:
         return modified_info
+    if re.search(fr'e-?{num_construct}e', example):
+        print(1)
+        return '"E" слева и справа от числа одновременно (в том числе отрицательного) не допускается!'
 
     cursor_or_selected_end_index = max(indexes_of_selection.values()) if indexes_of_selection and indexes_of_selection != 'по умолчанию' else cursor_index
     if example.count('q') == 1 and cursor_or_selected_end_index >= example.index('q') + 1:
@@ -466,10 +503,12 @@ def solve_example(example=None):
         if pre_example[i + 1] == '|':
             pre_example = pre_example[:i + 1] + 'Uu'[pre_example[i] in '0123456789!)ueπφ' or bool(re.match(r'[+•:^!\)]|mod|div', pre_example[i + 2:]))] + pre_example[i + 2:]
     example = pre_example[1:-1]
+    print(example)
     if text_tokens := re.findall(fr'\s*(?:(?:[0-9]*-)?{letters_and_not_example_like_inwords}+[0-9]*{syntax}*|{letters_and_inwords}*{syntax}+)', example):
+        print(text_tokens)
         for text_token in text_tokens:
             if re.search(r'[а-яА-ЯЁё]', text_token):
-                example = example.replace(text_token, '')
+                example = example.replace(text_token, '', 1)  # меняем по токену, а не несколько, пусть даже одинаковых, иначе появится баг
     example = example.replace(' ', '')
 
     example = clean_pattern_empty_scopes(example)
@@ -485,7 +524,7 @@ def solve_example(example=None):
     example = re.sub(r'(?<!a)r(?!c)', '$', example.replace('√', '$').replace('k', '$'))
     example = example.replace('by', ')by').replace('log', 'log(')
     example = f'({example})'.replace('-)', ')')[1:-1]
-    example = re.sub(r'(?<=d)(?<=mod|div|sin|cos|ctg|log|arc)(?<=[+\-•/:^(√])(?<=ln|lg|by|tg),', r'0,', example)
+    example = re.sub(r'(?:(?<=d)|(?<=mod|div|sin|cos|ctg|log|arc)|(?<=[+\-•/:^(√])|(?<=ln|lg|by|tg)),', r'0,', example)
     example = re.sub(r',(?=mod|div|d(?!i)|arc|sin|cos|c?tg|log|ln|lg|by|[+\-•:^)!])', r',0', example)
     example = re.sub(r'(?:[\+\-•:^,]|mod|div)(?=\))', r'', f'({example})')
     for i in range(len(example) - 2):
@@ -535,16 +574,16 @@ def solve_example(example=None):
     example = example.replace('lg', '1+1-').replace('ln', '1+1-').replace('by', '+')
     example = example.replace('k', '+1-').replace('log', '1+1-').replace('2.718281828459045', '1+1')
     example = example.replace('^-', '+').replace('+-', '-').replace('--', '+')
-    if re.search(r'(?:sin|cos|c?tg|k|(?<!mo)d(?!iv)|arc)(?:[+•:^,)!u]|mod|div)', saved_example):
-        return 'В примере после одной из функций стоит не тот символ, либо отстутствует что-либо!'
+    if err_msg := re.search(r'(sin|cos|c?tg|k|(?<!mo)d(?!iv)|arc)(?:[+•:^,)!u]|mod|div)', saved_example):
+        return f'В примере после функции {(err_msg[1], 'корня')[err_msg[1][:1] == 'k']} стоит не тот символ, либо отсутствует что-либо!'
     for i in (list('+•:^,)-0!u') + ['mod', 'div']):
         for j in ('lg', 'ln', 'log'):
             if j + '-' in saved_example:
-                return 'Число, находящееся после функции, со знаком минус берётся в скобки!'
+                return f'Число, находящееся после функции {j}, со знаком минус берётся в скобки!'
             if ((j + i) in saved_example) and ((j + '0,') not in saved_example):
-                return 'В примере после одной из функций ошибка!'
-    if re.search(r'[0-9,\.](?:sin|cos|c?tg|lg|ln|log|arc|d(?!i))', saved_example):
-        return "В примере перед одной из функций стоит не тот символ! (возможно перед этой функцией нужно поставить '•')"
+                return 'В примере после логарифмической функций стоит не тот символ!'
+    if err_msg := re.search(r'[0-9,\.](sin|cos|c?tg|lg|ln|log|arc|d(?!i))', saved_example):
+        return f"В примере перед функцией {err_msg[1]} стоит не тот символ! (возможно перед этой функцией нужно поставить '•')"
     example = example.replace('mod', '%').replace('div', '@')
     if 'ထ' in example:
         return 'К сожалению, строка не поддерживает бесконечности'
@@ -581,8 +620,8 @@ def solve_example(example=None):
                 return f'Почему в примере введено "{example[i + 1:i + 3]}"?'
     example = saved_example
     
-    if re.search(r'(?:k|sin|cos|c?tg|by|d(?!i)|arc)-', example):
-        return 'Нельзя число или выражение со знаком минус брать без скобок!'
+    if err_msg := re.search(r'(k|sin|cos|c?tg|by|d(?!i)|arc)-', example):
+        return f'Нельзя число или выражение со знаком минус брать без скобок! Минус после функции {(err_msg[1], 'корня')[err_msg[1][:1] == 'k']}'
     
     for i in range(len(example) - 2):
         if example[i + 1] == '|':
@@ -594,6 +633,7 @@ def solve_example(example=None):
     
     while '()' in example_brackets or 'Uu' in example_brackets:
         example_brackets = example_brackets.replace('()', '').replace('Uu', '')
+    example = adapt_trig_depending_if_there_is_pi_in_it(example)
     example = f'({example})'.replace('^-', '&').replace(',', '.').replace('(-', '(0-').replace('U-', 'U0-')
     example = re.sub(r'(\+|!|div|mod|U|u|•|:|\^|-|\(|\)|(?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)|ln|lg|k|log|by|e|d|arc)', r' \1 ', example)
     example_for_calculations = [i for i in example.replace('&', ' ^- ').split() if i]
@@ -704,6 +744,7 @@ def solve_example(example=None):
         
         if len(example_for_calculations) != 1:
             return 'Где-то ошибка!'
+        # print(example_for_calculations)
         example_for_calculations = Decimal(example_for_calculations[0])
         if ROUND_ANSWER_TO_MANUALLY != 'по умолчанию':
             example_for_calculations = example_for_calculations.quantize(zeros(ROUND_ANSWER_TO_MANUALLY), ROUND_HALF_UP)
@@ -1258,8 +1299,10 @@ def matching_when_cursor_on_regex(left_regex, right_regex):
 
 def delete_to_the(k):
     global example_value, cursor_index
+    last_keys_not_having_keytype_changed = list(filter(lambda key: key != 'changed', last_keys))
+    last_key_without_mul = bool(re.fullmatch(r'[sctCdalngo\\]', last_keys_not_having_keytype_changed[-1]) and last_keys_not_having_keytype_changed[-2] not in ('x', 'asterisk'))
     for i in reunite(united_symbols_without_scopes):
-        if (matches := matching_when_cursor_on_regex(fr'{i}\s*\(', r'\)') or matching_when_cursor_on_regex(fr'{i}\s*\|', r'\|')) and k == -1:
+        if (matches := matching_when_cursor_on_regex(fr'{'•?\s*' * last_key_without_mul}{i}\s*\(', r'\)') or matching_when_cursor_on_regex(fr'{i}\s*\|', r'\|')) and k == -1:
             example_value = delete_in_example(example_value, -len(matches[0][0]))
             example_value = delete_in_example(example_value, len(matches[1][0]))
             if re.search(r'm\s*o\s*$', example_value[:cursor_index]):
@@ -1267,24 +1310,29 @@ def delete_to_the(k):
             return
     for indx, left_match_check in enumerate(reunite(('log(', 'log|'))):
         for right_match_check in reunite(((')by()', ')by||'), ('|by||', '|by()'))[indx]):
-            if (matches := matching_when_cursor_on_regex(left_match_check, right_match_check)):
+            if (matches := matching_when_cursor_on_regex(fr'{'•?\s*' * last_key_without_mul}{left_match_check}', right_match_check)):
                 example_value = delete_in_example(example_value, -len(matches[0][0]))
                 example_value = delete_in_example(example_value, len(matches[1][0]))
                 return
     for indx, left_match_check in enumerate(reunite(('log()by(', 'log||by(', 'log||by|', 'log()by|'))):
         right_match_check = (r'\)', r'\|')[indx > 1]
-        if (matches := matching_when_cursor_on_regex(left_match_check, right_match_check)) and k == -1:
+        if (matches := matching_when_cursor_on_regex(fr'{'•?\s*' * last_key_without_mul}{left_match_check}', right_match_check)) and k == -1:
             example_value = delete_in_example(example_value, -len(matches[0][0]))
             example_value = delete_in_example(example_value, len(matches[1][0]))
             return
-    if matches := matching_when_cursor_on_regex(r'\(', r'\)') or matching_when_cursor_on_regex(r'\|', r'\|'):
+    if matches := matching_when_cursor_on_regex(fr'{'•?\s*' * last_key_without_mul}\(', r'\)') or matching_when_cursor_on_regex(fr'{'•?\s*' * last_key_without_mul}\|', r'\|'):
         example_value = delete_in_example(example_value, -len(matches[0][0]))
         example_value = delete_in_example(example_value, len(matches[1][0]))
-    elif (i := re.search(r'•(?:√|e)\s*$', example_value[:cursor_index])) and last_key == ('r', 'e')['e' in i[0]] and k == -1:
+    elif not re.search(fr'E-?{num_construct}•e$', exampled_value()[:cursor_index]) and (i := re.search(r'•(?:√|e)\s*$', example_value[:cursor_index])) and last_keys_not_having_keytype_changed[-1] == ('r', 'e')['e' in i[0]] and k == -1:
         example_value = delete_in_example(example_value, -len(i[0]))
-        example_value = insert_in_example(example_value, ('√', 'e')[last_key == 'e'])
+        example_value = insert_in_example(example_value, ('√', 'e')[last_keys_not_having_keytype_changed[-1] == 'e'])
     elif cursor_index > 0 and k == -1 or cursor_index < len(example_value) and k == 1:
-        example_value = delete_in_example(example_value, (-len(re.search(r'(?:\S|^)\s*$', example_value[:cursor_index])[0]), len(re.match(r'\s*(?:\S|$)', example_value[cursor_index:])[0]))[k > 0])
+        add_0_point_1_slash = bool(re.search(r'(?:[^0-9veE\.]|^)\s*1\s*/\s*|(?:[^0-9\.]\s*|^)0\s*\.\s*', example_value[:cursor_index]))
+        pre_length = -len(re.search(fr'(?:\S|{fr'\^\s*{'ujUJ'.index(last_keys[-1]) + 2}\s*|' if last_keys[-1] in 'ujUJ' else ''}' + 
+                                    fr'{fr'[Ee](?:\s*-)?\s*{num_construct}\s*|' if last_keys[-1] in 'kMBTQ' else ''}' + 
+                                    fr'{r'1\s*/|0\s*\.|' * add_0_point_1_slash}(?<=π)\s*/\s*\d|(?<=[eφ!)])\s*•\s*[\dv]|^)\s*$', example_value[:cursor_index])[0])
+        past_length = len(re.match(r'\s*(?:\S|$)', example_value[cursor_index:])[0])
+        example_value = delete_in_example(example_value, (pre_length, past_length)[k > 0])
 
 
 def get_selection(the_entry=entry_box):
@@ -1370,7 +1418,7 @@ def destroy_nearby_bracks(example, arg):
 
 
 def insertion_if_division_of_one(left_symbol, arg, example, destroy_nearby_scopes=False):
-    division_after_1_condition = re.fullmatch(r'(?:[^0-9v\.]|^\s*)1', exampled_value(example)[max(cursor_index - 2, 0):cursor_index])
+    division_after_1_condition = re.fullmatch(r'(?:[^0-9veE\.]|^\s*)1', exampled_value(example)[max(cursor_index - 2, 0):cursor_index])
     division_after_num_condition = re.search(r'(?<![ev])(?<![0-9.]e-)(?:\d+\.?\d*|\.\d+)/$', exampled_value(example)[:cursor_index])
     if arg in ('E3', 'E6', 'E9', 'E12', 'E15', 'E18'):
         if division_after_1_condition:
@@ -1382,7 +1430,7 @@ def insertion_if_division_of_one(left_symbol, arg, example, destroy_nearby_scope
         else:
             return insert_in_example(example, f'e{arg[1:]}')
     elif division_after_1_condition:
-        return (insert_in_example, destroy_nearby_bracks)[destroy_nearby_scopes](example, f'/{arg}')
+        return (insert_in_example, destroy_nearby_bracks)[destroy_nearby_scopes](example, f'{('/', '-')[arg in ('sin', 'cos', 'tg', 'ctg', 'log(', 'ln', 'lg')]}{arg}')
     else:
         return (insert_in_example, destroy_nearby_bracks)[destroy_nearby_scopes](example, f'{'•' if left_symbol in '0123456789φπevEထ)!' else ''}{arg}')
 
@@ -1410,7 +1458,7 @@ def exampled_value(example=None):
 
 def key_calc(key, just_from_added_win=False):
     global history_of_calculations, i_history, i_last_example, added_win, settings, example_value, cursor_index, can_backspace, indexes_of_selection, keyboard_layout_memory
-    global last_key
+    global last_keys
 
     bypass = bypass2 = False
     if i_last_example != 'future' and hasattr(key, 'keysym') and key.keysym not in ('Control_L', 'Control_R'):
@@ -1566,9 +1614,13 @@ def key_calc(key, just_from_added_win=False):
                 else:
                     example_value = insert_in_example(example_value, '•' * (symbol_left_from_cursor() in 'φπeEထ)!') + f'1000')
             elif keysym in 'kMBTQ':
-                # zers = '0' * (('kMBTQ'.index(keysym) + 1) * 3)
-                example_value = insertion_if_division_of_one(symbol_left_from_cursor(), f'E{('kMBTQ'.index(keysym) + 1) * 3}', example_value)
-            # elif re.fullmatch(r'(?:[^0-9v.]|^\s*)1/e$', exampled_value()[max(cursor_index - 4, 0):cursor_index]):
+                power_addons = ('kMBTQ'.index(keysym) + 1) * 3
+                if not (e_power := re.search(fr'E-?{num_construct}$', exampled_value()[:cursor_index])):
+                    example_value = insertion_if_division_of_one(symbol_left_from_cursor(), f'E{power_addons}', example_value)
+                else:
+                    example_value = delete_in_example(example_value, -len(e_power[1]))
+                    example_value = insert_in_example(example_value, str(Decimal(e_power[1]) + power_addons))
+            # elif re.fullmatch(r'(?:[^0-9veE.]|^\s*)1/e$', exampled_value()[max(cursor_index - 4, 0):cursor_index]):
             #     example_value = delete_in_example(example_value, -len(re.search(r'1\s*/\s*e\s*$', example_value[:cursor_index])[0]))
             #     example_value = insert_in_example(example_value, f'1e-{keysym}')
             #     if re.search(fr'(?:(?<=^)|(?<![\dφπeE]))\s*(?:\d+\.?\d*|\.\d+)•1[Ee]-{keysym}$', exampled_value()[:cursor_index]):
@@ -1707,7 +1759,7 @@ def key_calc(key, just_from_added_win=False):
             elif re.search(fr'{num_construct}•e$', exampled_value()[:cursor_index]) and not re.search(fr'[Ee]-?{num_construct}•e$', exampled_value()[:cursor_index]):
                 example_value = delete_in_example(example_value, -len(re.search(r'•\s*e\s*$', example_value[:cursor_index])[0]))
                 example_value = insert_in_example(example_value, f'e{keysym}')
-            elif re.fullmatch(r'(?:[^0-9v.]|^\s*)1/e$', exampled_value()[max(cursor_index - 4, 0):cursor_index]):
+            elif re.fullmatch(r'(?:[^0-9veE.]|^\s*)1/e$', exampled_value()[max(cursor_index - 4, 0):cursor_index]):
                 example_value = delete_in_example(example_value, -len(re.search(r'1\s*/\s*e\s*$', example_value[:cursor_index])[0]))
                 example_value = insert_in_example(example_value, f'1e-{keysym}')
                 if re.search(fr'(?:(?<=^)|(?<![\dφπeE]))\s*(?:\d+\.?\d*|\.\d+)•1[Ee]-{keysym}$', exampled_value()[:cursor_index]):
@@ -1852,7 +1904,7 @@ def key_calc(key, just_from_added_win=False):
             if len(recents['recent examples']) > 20:
                 recents['recent examples'].pop(0)
     
-    last_key = keysym
+    last_keys.append(keysym)
     entry_box.icursor(cursor_index)
     if modify_info(example_value) is not None and keysym not in ('apostrophe', 'quotedbl'):
         calculate_result()
@@ -2197,13 +2249,13 @@ def move_up(key):
     
     
 def add_to_last_examples_if_selection_or_cursor_change():
-    global last_key
+    global last_keys
     if 'q' in example_value:
         return
     value_to_add_plus = [example_value, clear_space_and_bracks_with_content(result.get().strip('=')) if example_value else '', '', cursor_index, indexes_of_selection if indexes_of_selection else None, settings['round']]
     if value_to_add_plus != recents['last examples'][-1]:
         recents['last examples'].append(value_to_add_plus)
-        last_key = 'changed'
+        last_keys.append('changed')
     if len(recents['last examples']) > 1000:
         recents['last examples'].pop(0)
     
@@ -2418,7 +2470,7 @@ def paste_text(*key):
     if indexes_of_selection is None:
         indexes_of_selection = {'start': cursor_index, 'end': cursor_index}
     
-    replaced_paste = pyperclip.paste().replace('E+', 'E').replace('E', '#').lower().replace('#', 'E')
+    replaced_paste = re.sub(r'E0+(\d)', r'E\1', pyperclip.paste().replace('E+', 'E')).replace('E', '#').lower().replace('#', 'E')
 
     if re.search(r'2\d{3}\.(?:0\d|11|12)\.(?:[0-3]\d|31) (?:[01]\d|2[0-3])(?::[0-5]\d){2}', replaced_paste):
         # Алгоритм замены для истории
@@ -2462,8 +2514,8 @@ def paste_text(*key):
                 item2 = item2.replace('&@@&@@', '(').replace('@&&@&&', ')')
                 item2 = item2.replace('base', 'by')
 
-                item2 = re.sub(r'(?<=[0-9φπeထ)!])E', r'•10^', item2)
-                item2 = re.sub(r'(?<=[^√])E', r'1•10^', item2).replace('E', '•10^')
+                # item2 = re.sub(r'(?<=[0-9φπeထ)!])E', r'•10^', item2)
+                # item2 = re.sub(r'(?<=[^√])E', r'1•10^', item2).replace('E', '•10^')
                 
                 item2 = re.sub(r'((?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln|lg|log)(\d+\.?\d*|\.\d+)(\()', r'\1#\2#\3', item2)
                 while re.search(mul_between_digits_and_constants := r'([φπe\)])([0-9φπe\.\(])', item2):
@@ -2482,7 +2534,7 @@ def paste_text(*key):
                     value = value[1:-1]
                     replaced_paste[index1][index2] = (f'({i})', i)[re.fullmatch(r'U(?:Uu)*u', re.sub(r'[^Uu]', '', value)) is not None]
                 else:
-                    replaced_paste[index1][index2] = (f'({i})', i)[re.fullmatch(num_construct, i) is not None]
+                    replaced_paste[index1][index2] = (f'({i})', i)[re.fullmatch(fr'{num_construct}|\(-?{num_construct}\)', i) is not None]
 
         for index1, item1 in enumerate(replaced_paste):
             for index2, item2 in enumerate(item1):
@@ -2516,7 +2568,10 @@ def paste_text(*key):
                     copied_res[1] = copied_res[1].replace('(', '').replace(')', '')
 
                 if 0 < abs(float(copied_res[0])) < 1 and len(copied_res) == 1:
-                    copied_res[0] = re.search(r'-?\d*\.0*\d{,2}', copied_res[0])[0]
+                    copied_res[0] = re.search(r'-?\d*\.0*\d{,3}', copied_res[0])[0]
+                    if re.search(r'-?\d*\.0*[1-9]\d[1-9]', copied_res[0]):
+                        copied_res[0] = copied_res[0][:-3] + str(Decimal('0.' + copied_res[0][-3:]).quantize(Decimal('.00'), ROUND_HALF_UP))[2:]  # не округляет децимал пред запятой, идиот он
+                    copied_res[0] = copied_res[0].rstrip('0')
                 else:
                     copied_res[0] = str(Decimal(copied_res[0]).quantize(Decimal('.00'), ROUND_HALF_UP))
                 if copied_res[0][-3:] in ('.00', ',00'):

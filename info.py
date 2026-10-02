@@ -46,7 +46,7 @@ special_keys = ('Up', 'Down', 'Left', 'Right', 'Control_L', 'Return', 'grave', '
                 'Control_R', 'Shift_L', 'Shift_R', 'Alt_L', 'Alt_R', 'Escape', 'Caps_Lock', 'apostrophe', 'quotedbl', 'braceleft', 'braceright')
 ghost_keys = ('Up', 'Down', 'Left', 'Right', 'Control_L', 'Control_R', 'Shift_L', 'Shift_R', 'Alt_L', 'Alt_R', 'Caps_Lock')
 keys_after_dot = ('minus', 'equal', 'slash', 'semicolon', 'backslash', 'bracketleft', 'bracketright')
-last_key = None
+last_keys = [None for _ in range(20)]
 
 rounds = [zeros(_) for _ in (400, 380, 360, 305, 100)]
 ending_symbols = list('+-•:^,%@k.') + list(united_symbols)

@@ -178,13 +178,16 @@ class C:
     def trig(cls, func, raw_angle):
         fake_degree_info = 'd' in func
         func = func.replace('d', '')
-        is_rat = cls.is_rational(raw_angle)
-        new_degree_info = (is_rat, not is_rat)[fake_degree_info]
-        angle = cls.rad_to_deg(raw_angle, fake_degree_info)
+        # is_rat = cls.is_rational(raw_angle)
+        # new_degree_info = (is_rat, not is_rat)[fake_degree_info]
+        # angle = cls.rad_to_deg(raw_angle, fake_degree_info)
+        angle = Decimal(raw_angle)
+        if not fake_degree_info:
+            angle = rond(angle / C.pi * 180, 0)
         if func in ('tg', 'cos') and rond(angle, 1) % 180 == 90:
-            return f'Тангенс углов {('π/2, 3π/2, 5π/2, ...', '90, 270, 450, ...')[new_degree_info]} смысла не имеет! (±ထ)' if func != 'cos' else 0
+            return f'Тангенс углов {('π/2, 3π/2, 5π/2, ...', '90, 270, 450, ...')[fake_degree_info]} смысла не имеет! (±ထ)' if func != 'cos' else 0  # new_degree_info вместо fake_degree_info было
         if func in ('sin', 'ctg') and rond(angle, 1) % 180 == 0:
-            return f'Котангенс углов {('0, π, 2π, ...', '0, 180, 360, ...')[new_degree_info]} смысла не имеет! (±ထ)' if func != 'sin' else 0
+            return f'Котангенс углов {('0, π, 2π, ...', '0, 180, 360, ...')[fake_degree_info]} смысла не имеет! (±ထ)' if func != 'sin' else 0  # new_degree_info вместо fake_degree_info было
         angle = rond(angle / 180 * C.pi, 1)
         if func == 'sin':
             return mp.sin(angle)
