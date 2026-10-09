@@ -410,7 +410,7 @@ def q_solve_example(example):
     return solve_example(clear_q_with_content(example, cursor_index))
     
 
-def solve_example(example=None):
+def solve_example(example=None, get_raw_ans=False):
     global perfect_example, ROUND_ANSWER_TO_MANUALLY, last_time_round_change
     perfect_example = ''
 
@@ -419,7 +419,6 @@ def solve_example(example=None):
     if modified_info is not None:
         return modified_info
     if re.search(fr'e-?{num_construct}e', example):
-        print(1)
         return '"E" слева и справа от числа одновременно (в том числе отрицательного) не допускается!'
 
     cursor_or_selected_end_index = max(indexes_of_selection.values()) if indexes_of_selection and indexes_of_selection != 'по умолчанию' else cursor_index
@@ -503,9 +502,8 @@ def solve_example(example=None):
         if pre_example[i + 1] == '|':
             pre_example = pre_example[:i + 1] + 'Uu'[pre_example[i] in '0123456789!)ueπφ' or bool(re.match(r'[+•:^!\)]|mod|div', pre_example[i + 2:]))] + pre_example[i + 2:]
     example = pre_example[1:-1]
-    print(example)
+
     if text_tokens := re.findall(fr'\s*(?:(?:[0-9]*-)?{letters_and_not_example_like_inwords}+[0-9]*{syntax}*|{letters_and_inwords}*{syntax}+)', example):
-        print(text_tokens)
         for text_token in text_tokens:
             if re.search(r'[а-яА-ЯЁё]', text_token):
                 example = example.replace(text_token, '', 1)  # меняем по токену, а не несколько, пусть даже одинаковых, иначе появится баг
@@ -744,8 +742,9 @@ def solve_example(example=None):
         
         if len(example_for_calculations) != 1:
             return 'Где-то ошибка!'
-        # print(example_for_calculations)
         example_for_calculations = Decimal(example_for_calculations[0])
+        if get_raw_ans:
+            return example_for_calculations
         if ROUND_ANSWER_TO_MANUALLY != 'по умолчанию':
             example_for_calculations = example_for_calculations.quantize(zeros(ROUND_ANSWER_TO_MANUALLY), ROUND_HALF_UP)
         if abs(example_for_calculations) > Decimal(10) ** -(ROUND_ANSWER_TO - ROUND_ANSWER_TO_IF_POW) or abs(example_for_calculations) < Decimal(10) ** -300:
@@ -756,7 +755,7 @@ def solve_example(example=None):
         if example_for_calculations == 0:
             return '0'
         raw_res = str(example_for_calculations.quantize(Decimal('.0'), ROUND_HALF_UP))[:-2] if example_for_calculations % 1 == 0 else str(example_for_calculations)
-        if (Decimal(raw_res) > Decimal(10) ** 24 or 0 < Decimal(raw_res) < Decimal(10) ** -6) or (Decimal(raw_res) < -Decimal(10) ** 24 or 0 > Decimal(raw_res) > -Decimal(10) ** -6):
+        if (Decimal(raw_res) > Decimal(10) ** abs(min_rounding - 1) or 0 < Decimal(raw_res) < Decimal(10) ** -6) or (Decimal(raw_res) < -Decimal(10) ** abs(min_rounding - 1) or 0 > Decimal(raw_res) > -Decimal(10) ** -6):
             fly_exp = 0
             while abs(Decimal(raw_res)) >= Decimal(10) ** 300:
                 raw_res = str(Decimal(raw_res) / Decimal(10) ** 100)
@@ -874,7 +873,7 @@ def delete_in_example(example, index_limit_steps):
 
 def disable_editing_added_win_text(key):
     if not ((key.state & 0x0004 | key.state & 0x0008) or key.keysym in ghost_keys) and not (key.state & 0x0001 and key.keysym in ('Up',' Down', 'Left', 'Right')):
-        real_key_calc(key, True)
+        supermanage_key_event(key, True)
     # Разрешаем Control-C (копирование) и Control-A (выделение всего)
     if (key.state & 0x0004) and (key.keysym.lower() == 'a'):
         return  # Не блокируем эти события
@@ -932,7 +931,19 @@ def added_win_control_keypress(event):
     set_last_func_is_ctrl_shift_scroll(False)
     set_del_mode(False)
     keysym = event.keysym.lower() if len(event.keysym) == 1 else event.keysym
-    if keysym == 'space':
+    if keysym in ('less', 'greater'):
+        key_old = event
+        key = Event()
+        key.keysym = ('Left', 'Right')[key_old.keysym == 'greater']
+        key.state = 0x40000
+        key.keycode = (37, 39)[key_old.keysym == 'greater']
+        key.type = 2        # Число 2 означает KeyPress (нажатие)
+        key.x = key_old.x
+        key.y = key_old.y
+        key.widget = key_old.widget
+        key.char = ''
+        set_cursor_to_the(key, define_future_of_cursor(('left', 'right')[key_old.keysym == 'greater']))
+    elif keysym == 'space':
         entry_box.focus_set()
         beauty_letter_tape.wm_attributes('-topmost', 1)
     elif keysym == 'w':
@@ -1127,29 +1138,59 @@ def move_on_lasts(x, y):
     tape_creation_time = time.time()
 
 
-def create_undoer_redoer_tape():
-    global tape, tape_canvas, tape_creation_time
-    if not tape:
-        tape = Toplevel()
-        tape.geometry(f'{WIDTH}x{HEIGHT}+{MIN_X_COORD}+{settings['y'] - HEIGHT}')
-        tape.overrideredirect(True)
-        tape.wm_attributes('-topmost', 1)
-        tape.attributes('-alpha', '0.95')
-        tape['bg'] = main_win['bg']
+def shift_info_for_more_comftable_reading(key):
+    set_tape_creation_time(key)
+    tape_info_label.place(x=tape_info_label.winfo_x() + WIDTH // 51 * (1, -1)[key.delta < 0], y=0)
+
+
+def create_tape(tape_type='undo-redo', info_blit='', info_action=None):
+    global tape, tape_canvas, tape_creation_time, tape_info_label, example_value
+    if (not tape or int(tape_canvas.cget('width')) == 0) and tape_type == 'undo-redo':
+        if tape and int(tape_canvas.cget('width')) == 0:
+            destroy_tape()
+        create_tape_base(main_win['bg'])
         
         tape_canvas = Canvas(tape, width=WIDTH, height=HEIGHT, bg=entry_box.cget('bg'), borderwidth=0, highlightthickness=0)
         tape_canvas.pack()
         resize_and_retheme_canvas_drawings()
         tape.bind('<ButtonPress-1>', lambda event: move_on_lasts(event.x, event.y))
         tape.bind('<Motion>', set_tape_creation_time)
-        tape.bind('<Shift-MouseWheel>', smart_accelerated_scroll)
+        tape.bind('<Shift-MouseWheel>', smart_accelerated_scroll)  # для удобного потягивания по тачпаду
+        tape.bind('<MouseWheel>', smart_accelerated_scroll)  # для удобной прокрутки колеса мыши без прожатия shift
+    elif (not tape or int(tape_canvas.cget('width')) > 0) and tape_type == 'info':
+        if tape and int(tape_canvas.cget('width')) > 0:
+            destroy_tape()
+        create_tape_base(entry_box.cget('bg'))
+        
+        tape_canvas = Canvas(tape, width=0, height=0, bg=entry_box.cget('bg'), borderwidth=0, highlightthickness=0)
+        tape_canvas.pack()
+        tape_info_label = Label(tape, text=info_blit, font=('Arial', HEIGHT // 2), fg=entry_box.cget('fg'), bg=entry_box.cget('bg'))
+        tape_info_label.place(x=0, y=0)
+        resize_and_retheme_canvas_drawings()
+        tape.bind('<ButtonPress-1>', lambda event: None if not (a := 'нажми меня, чтобы поменять местами аргументы логарифмов') in info_blit
+                  else (entry_box.delete(0, END), entry_box.insert(END, info_blit.split(' – ')[0]), calculate_result(), pyautogui.moveTo(event.x_root, event.y_root + (-HEIGHT, HEIGHT)[settings['y'] - HEIGHT > 0]), destroy_tape()))
+        tape.bind('<Motion>', set_tape_creation_time)
+        tape.bind('<Shift-MouseWheel>', shift_info_for_more_comftable_reading)  # для удобного потягивания по тачпаду
+        tape.bind('<MouseWheel>', shift_info_for_more_comftable_reading)  # для удобной прокрутки колеса мыши без прожатия shift
 
     tape_creation_time = time.time()
 
-def destroy_tape():
+
+def create_tape_base(tape_color):
     global tape
+    tape = Toplevel()
+    tape.geometry(f'{WIDTH}x{HEIGHT}+{MIN_X_COORD}+{settings['y'] - HEIGHT}')
+    tape.overrideredirect(True)
+    tape.wm_attributes('-topmost', 1)
+    tape.attributes('-alpha', '0.95')
+    tape['bg'] = tape_color
+
+
+def destroy_tape():
+    global tape, tape_creation_time
     tape.destroy()
     tape = None
+    tape_creation_time = 10 ** 100
 
 
 def tape_text_color(light_up_indxs, lst, indx):
@@ -1163,59 +1204,64 @@ def on_hover_rect(rect_tag, i):
 def on_leave_rect(rect_tag):
     tape_canvas.delete('text' + rect_tag)
 
-def resize_and_retheme_canvas_drawings():
-    global tape_canvas, tape_creation_time, oval_center_x, oval_center_y, oval_radius
+def resize_and_retheme_canvas_drawings(info_blit=''):
+    global tape_canvas, tape_creation_time, tape_info_label, oval_center_x, oval_center_y, oval_radius
     tape.geometry(f'{WIDTH}x{HEIGHT}+{MIN_X_COORD}+{settings['y'] - HEIGHT if settings['y'] - HEIGHT > 0 else settings['y'] + HEIGHT}')
-    tape_canvas.config(width=WIDTH, height=HEIGHT)
-    tape_canvas.config(bg=entry_box.cget('bg'))
-    tape_canvas.delete('all')
-    lst = get_tape_scale()
-    i_num_last_example = (-1, len(recents['last examples']) - 1)[i_last_example == 'future'] if type(i_last_example) == str else i_last_example
-    
-    for indx, i in enumerate(lst):
-        if i_num_last_example in range(-1, len(recents['last examples'])) and len(lst) // 2 != len(lst) - indx - 1:
-            indx_info = (len(recents['last examples']) - (i_num_last_example + 1)) - len(lst) // 2 + (len(lst) - indx - 1)
-            the_rect_tag = 'rect' + str(indx_info)
-
-            tape_canvas.create_rectangle(i + 1, 0, i + HEIGHT - 1, HEIGHT, tags=the_rect_tag, fill=entry_box.cget('bg'), outline='')
-            tape_canvas.tag_bind(the_rect_tag, '<Enter>', lambda event, rect_tag=the_rect_tag, i=i: on_hover_rect(rect_tag, i))
-            tape_canvas.tag_bind(the_rect_tag, '<Leave>', lambda event, rect_tag=the_rect_tag: on_leave_rect(rect_tag))
-            
-    for indx, i in enumerate(lst):
-        if i_num_last_example in range(-1, len(recents['last examples'])):
-            indx_info = (len(recents['last examples']) - (i_num_last_example + 1)) - len(lst) // 2 + (len(lst) - indx - 1)
-            if indx_info in range(-1, len(recents['last examples']) + 1):
-                tape_canvas.create_line(i, 7 * HEIGHT // 8, i, HEIGHT, fill=tape_text_color((0, 1), lst, indx), width=1)
-            if len(lst) // 2 == len(lst) - indx - 1:
-                tape_canvas.create_line(i, 7 * HEIGHT // 8, i + HEIGHT, 7 * HEIGHT // 8, fill=tape_text_color((0, 1), lst, indx), width=1)
-            if indx_info % 10 == 0 or len(lst) // 2 == len(lst) - indx - 1:
-                strdx_info = str(indx_info)
+    if int(tape_canvas.cget('width')) > 0:
+        tape_canvas.config(width=WIDTH, height=HEIGHT)
+        tape_canvas.config(bg=entry_box.cget('bg'))
+        tape_canvas.delete('all')
+        lst = get_tape_scale()
+        i_num_last_example = (-1, len(recents['last examples']) - 1)[i_last_example == 'future'] if type(i_last_example) == str else i_last_example
+        
+        for indx, i in enumerate(lst):
+            if i_num_last_example in range(-1, len(recents['last examples'])) and len(lst) // 2 != len(lst) - indx - 1:
+                indx_info = (len(recents['last examples']) - (i_num_last_example + 1)) - len(lst) // 2 + (len(lst) - indx - 1)
                 the_rect_tag = 'rect' + str(indx_info)
-                
-                tape_canvas.create_text(i + HEIGHT // 2 + 1, 3 * HEIGHT // 8, font=('Arial', HEIGHT // 2, 'bold'), anchor=CENTER, fill=tape_text_color((0,), lst, indx),
-                                        text=strdx_info if indx_info == 0 else '-' + strdx_info if '-' not in strdx_info else strdx_info[1:], tags='text' + str(indx_info))
-                tape_canvas.tag_bind('text' + str(indx_info), '<Enter>', lambda event, rect_tag=the_rect_tag, i=i: on_hover_rect(rect_tag, i))
-                tape_canvas.tag_bind('text' + str(indx_info), '<Leave>', lambda event, rect_tag=the_rect_tag: on_leave_rect(rect_tag))
 
-    
-    oval_center_x = oval_center_y = HEIGHT // 2
-    oval_radius = 3 * HEIGHT // 8
-    tape_canvas.create_oval(oval_center_x - oval_radius, oval_center_y - oval_radius,
-                           oval_center_x + oval_radius, oval_center_y + oval_radius, fill=('black', 'white')[settings['theme'] == 'light'], tags='left_oval')
-    tape_canvas.create_oval(WIDTH - (oval_center_x + oval_radius), oval_center_y - oval_radius,
-                            WIDTH - (oval_center_x - oval_radius), oval_center_y + oval_radius, fill=('black', 'white')[settings['theme'] == 'light'], tags='right_oval')
-    
-    tape_canvas.create_line(oval_center_x - oval_radius + 1, HEIGHT // 2, oval_center_x + oval_radius, HEIGHT // 2,
-                            fill=('white', 'black')[settings['theme'] == 'light'], width=3,
-                            arrow=LAST, arrowshape=(HEIGHT // 4, 3 * HEIGHT // 8, HEIGHT // 6),  tags='left_tape_arrow')
-    tape_canvas.create_line(WIDTH - (oval_center_x + oval_radius - 1), HEIGHT // 2, WIDTH - (oval_center_x - oval_radius), HEIGHT // 2,
-                            fill=('white', 'black')[settings['theme'] == 'light'], width=3,
-                            arrow=FIRST, arrowshape=(HEIGHT // 4, 3 * HEIGHT // 8, HEIGHT // 6),  tags='right_tape_arrow')
-    for (oval_tag, tape_arrow_tag) in (('left_oval', 'left_tape_arrow'), ('right_oval', 'right_tape_arrow')):
-        tape_canvas.tag_bind(oval_tag, '<Enter>', lambda event, tape_arr_tag=tape_arrow_tag: on_hover_oval(tape_arr_tag))
-        tape_canvas.tag_bind(oval_tag, '<Leave>', lambda event, tape_arr_tag=tape_arrow_tag: on_leave_oval(tape_arr_tag))
-        tape_canvas.tag_bind(tape_arrow_tag, '<Enter>', lambda event, tape_arr_tag=tape_arrow_tag: on_hover_oval(tape_arr_tag))
-        tape_canvas.tag_bind(tape_arrow_tag, '<Leave>', lambda event, tape_arr_tag=tape_arrow_tag: on_leave_oval(tape_arr_tag))
+                tape_canvas.create_rectangle(i + 1, 0, i + HEIGHT - 1, HEIGHT, tags=the_rect_tag, fill=entry_box.cget('bg'), outline='')
+                tape_canvas.tag_bind(the_rect_tag, '<Enter>', lambda event, rect_tag=the_rect_tag, i=i: on_hover_rect(rect_tag, i))
+                tape_canvas.tag_bind(the_rect_tag, '<Leave>', lambda event, rect_tag=the_rect_tag: on_leave_rect(rect_tag))
+                
+        for indx, i in enumerate(lst):
+            if i_num_last_example in range(-1, len(recents['last examples'])):
+                indx_info = (len(recents['last examples']) - (i_num_last_example + 1)) - len(lst) // 2 + (len(lst) - indx - 1)
+                if indx_info in range(-1, len(recents['last examples']) + 1):
+                    tape_canvas.create_line(i, 7 * HEIGHT // 8, i, HEIGHT, fill=tape_text_color((0, 1), lst, indx), width=1)
+                if len(lst) // 2 == len(lst) - indx - 1:
+                    tape_canvas.create_line(i, 7 * HEIGHT // 8, i + HEIGHT, 7 * HEIGHT // 8, fill=tape_text_color((0, 1), lst, indx), width=1)
+                if indx_info % 10 == 0 or len(lst) // 2 == len(lst) - indx - 1:
+                    strdx_info = str(indx_info)
+                    the_rect_tag = 'rect' + str(indx_info)
+                    
+                    tape_canvas.create_text(i + HEIGHT // 2 + 1, 3 * HEIGHT // 8, font=('Arial', HEIGHT // 2, 'bold'), anchor=CENTER, fill=tape_text_color((0,), lst, indx),
+                                            text=strdx_info if indx_info == 0 else '-' + strdx_info if '-' not in strdx_info else strdx_info[1:], tags='text' + str(indx_info))
+                    tape_canvas.tag_bind('text' + str(indx_info), '<Enter>', lambda event, rect_tag=the_rect_tag, i=i: on_hover_rect(rect_tag, i))
+                    tape_canvas.tag_bind('text' + str(indx_info), '<Leave>', lambda event, rect_tag=the_rect_tag: on_leave_rect(rect_tag))
+
+        
+        oval_center_x = oval_center_y = HEIGHT // 2
+        oval_radius = 3 * HEIGHT // 8
+        tape_canvas.create_oval(oval_center_x - oval_radius, oval_center_y - oval_radius,
+                            oval_center_x + oval_radius, oval_center_y + oval_radius, fill=('black', 'white')[settings['theme'] == 'light'], tags='left_oval')
+        tape_canvas.create_oval(WIDTH - (oval_center_x + oval_radius), oval_center_y - oval_radius,
+                                WIDTH - (oval_center_x - oval_radius), oval_center_y + oval_radius, fill=('black', 'white')[settings['theme'] == 'light'], tags='right_oval')
+        
+        tape_canvas.create_line(oval_center_x - oval_radius + 1, HEIGHT // 2, oval_center_x + oval_radius, HEIGHT // 2,
+                                fill=('white', 'black')[settings['theme'] == 'light'], width=3,
+                                arrow=LAST, arrowshape=(HEIGHT // 4, 3 * HEIGHT // 8, HEIGHT // 6),  tags='left_tape_arrow')
+        tape_canvas.create_line(WIDTH - (oval_center_x + oval_radius - 1), HEIGHT // 2, WIDTH - (oval_center_x - oval_radius), HEIGHT // 2,
+                                fill=('white', 'black')[settings['theme'] == 'light'], width=3,
+                                arrow=FIRST, arrowshape=(HEIGHT // 4, 3 * HEIGHT // 8, HEIGHT // 6),  tags='right_tape_arrow')
+        for (oval_tag, tape_arrow_tag) in (('left_oval', 'left_tape_arrow'), ('right_oval', 'right_tape_arrow')):
+            tape_canvas.tag_bind(oval_tag, '<Enter>', lambda event, tape_arr_tag=tape_arrow_tag: on_hover_oval(tape_arr_tag))
+            tape_canvas.tag_bind(oval_tag, '<Leave>', lambda event, tape_arr_tag=tape_arrow_tag: on_leave_oval(tape_arr_tag))
+            tape_canvas.tag_bind(tape_arrow_tag, '<Enter>', lambda event, tape_arr_tag=tape_arrow_tag: on_hover_oval(tape_arr_tag))
+            tape_canvas.tag_bind(tape_arrow_tag, '<Leave>', lambda event, tape_arr_tag=tape_arrow_tag: on_leave_oval(tape_arr_tag))
+
+    else:
+        tape.config(bg=entry_box.cget('bg'))
+        tape_info_label.config(text=info_blit if info_blit else tape_info_label.cget('text'), fg=entry_box.cget('fg'), bg=entry_box.cget('bg'), font=('Arial', HEIGHT // 2))
 
     tape_creation_time = time.time()
     
@@ -1245,7 +1291,13 @@ main_win.resizable(width=False, height=False)
 main_win.title('Калькулятор.')
 main_win['bg'] = white_or_black
 
+
+def force_entry_copy(key):
+    global indexes_of_selection
+    main_win.after(150, pyautogui.press('\''))  # минимальное значение в миллисекундах, чтобы прекратить выделение копируемого окна
+    return 'break'
 entry_box = Entry(main_win, font=('Arial', HEIGHT // 2), fg=white_or_black, bg=white_or_black, borderwidth=0, insertwidth=1, insertontime=700, insertofftime=500, exportselection=0)
+entry_box.bind('<Double-Button-1>', force_entry_copy)
 entry_box.insert(END, recents['example before closing'])
 entry_box.icursor(recents['cursor before closing'])
 entry_box.focus_set()
@@ -1254,6 +1306,7 @@ indexes_of_selection = None
 can_backspace = entry_box.index('insert') != 0
 
 result = Entry(main_win, font=('Arial', HEIGHT // 2), fg=white_or_black, bg=white_or_black, borderwidth=0, insertwidth=1, insertontime=700, insertofftime=500, exportselection=0)
+result.bind('<Double-Button-1>', lambda key: pyautogui.press('"'))
 change_width_of_entry(recents['example before closing'], entry_box, result)
 example_value = entry_box.get()
 
@@ -1301,37 +1354,41 @@ def delete_to_the(k):
     global example_value, cursor_index
     last_keys_not_having_keytype_changed = list(filter(lambda key: key != 'changed', last_keys))
     last_key_without_mul = bool(re.fullmatch(r'[sctCdalngo\\]', last_keys_not_having_keytype_changed[-1]) and last_keys_not_having_keytype_changed[-2] not in ('x', 'asterisk'))
+    last_key_without_scope_for_minus = bool(last_keys_not_having_keytype_changed[-1] == 'minus' and last_keys_not_having_keytype_changed[-2] not in ('parenleft', 'o'))
     for i in reunite(united_symbols_without_scopes):
-        if (matches := matching_when_cursor_on_regex(fr'{'•?\s*' * last_key_without_mul}{i}\s*\(', r'\)') or matching_when_cursor_on_regex(fr'{i}\s*\|', r'\|')) and k == -1:
+        if (matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}{i}\s*\(', r'\)') or matching_when_cursor_on_regex(fr'{i}\s*\|', r'\|')) and k == -1:
             example_value = delete_in_example(example_value, -len(matches[0][0]))
+            if after_1_condition := re.fullmatch(r'(?:[^0-9veE\.]|^)\s*1\s*([+\-]\s*)', example_value[:cursor_index]):
+                example_value = delete_in_example(example_value, -len(after_1_condition[1]))
             example_value = delete_in_example(example_value, len(matches[1][0]))
             if re.search(r'm\s*o\s*$', example_value[:cursor_index]):
                 example_value = insert_in_example(example_value, 'd')
             return
     for indx, left_match_check in enumerate(reunite(('log(', 'log|'))):
         for right_match_check in reunite(((')by()', ')by||'), ('|by||', '|by()'))[indx]):
-            if (matches := matching_when_cursor_on_regex(fr'{'•?\s*' * last_key_without_mul}{left_match_check}', right_match_check)):
+            if (matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}{left_match_check}', right_match_check)):
                 example_value = delete_in_example(example_value, -len(matches[0][0]))
                 example_value = delete_in_example(example_value, len(matches[1][0]))
                 return
     for indx, left_match_check in enumerate(reunite(('log()by(', 'log||by(', 'log||by|', 'log()by|'))):
         right_match_check = (r'\)', r'\|')[indx > 1]
-        if (matches := matching_when_cursor_on_regex(fr'{'•?\s*' * last_key_without_mul}{left_match_check}', right_match_check)) and k == -1:
+        if (matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}{left_match_check}', right_match_check)) and k == -1:
             example_value = delete_in_example(example_value, -len(matches[0][0]))
             example_value = delete_in_example(example_value, len(matches[1][0]))
             return
-    if matches := matching_when_cursor_on_regex(fr'{'•?\s*' * last_key_without_mul}\(', r'\)') or matching_when_cursor_on_regex(fr'{'•?\s*' * last_key_without_mul}\|', r'\|'):
+    if matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}\({r'\s*-' * last_key_without_scope_for_minus}', r'\)') or matching_when_cursor_on_regex(fr'{'•?\s*' * last_key_without_mul}\|', r'\|'):
         example_value = delete_in_example(example_value, -len(matches[0][0]))
         example_value = delete_in_example(example_value, len(matches[1][0]))
-    elif not re.search(fr'E-?{num_construct}•e$', exampled_value()[:cursor_index]) and (i := re.search(r'•(?:√|e)\s*$', example_value[:cursor_index])) and last_keys_not_having_keytype_changed[-1] == ('r', 'e')['e' in i[0]] and k == -1:
+    elif not re.search(fr'E-?{num_construct}•e$', exampled_value()[:cursor_index]) and (i := re.search(r'(?<=[\d.])•(?:√|e\s*-?)\s*$', example_value[:cursor_index])) and last_keys_not_having_keytype_changed[-1] == ('r', 'e', 'minus')[('e' in i[0]) + ('-' in i[0])] and k == -1:
         example_value = delete_in_example(example_value, -len(i[0]))
-        example_value = insert_in_example(example_value, ('√', 'e')[last_keys_not_having_keytype_changed[-1] == 'e'])
+        example_value = insert_in_example(example_value, ('√', 'e' + '-' * (last_keys_not_having_keytype_changed[-1] == 'minus'))[last_keys_not_having_keytype_changed[-1] != 'r'])
     elif cursor_index > 0 and k == -1 or cursor_index < len(example_value) and k == 1:
         add_0_point_1_slash = bool(re.search(r'(?:[^0-9veE\.]|^)\s*1\s*/\s*|(?:[^0-9\.]\s*|^)0\s*\.\s*', example_value[:cursor_index]))
         pre_length = -len(re.search(fr'(?:\S|{fr'\^\s*{'ujUJ'.index(last_keys[-1]) + 2}\s*|' if last_keys[-1] in 'ujUJ' else ''}' + 
-                                    fr'{fr'[Ee](?:\s*-)?\s*{num_construct}\s*|' if last_keys[-1] in 'kMBTQ' else ''}' + 
-                                    fr'{r'1\s*/|0\s*\.|' * add_0_point_1_slash}(?<=π)\s*/\s*\d|(?<=[eφ!)])\s*•\s*[\dv]|^)\s*$', example_value[:cursor_index])[0])
-        past_length = len(re.match(r'\s*(?:\S|$)', example_value[cursor_index:])[0])
+                                    fr'{fr'•\s*[Ee](?:\s*-)?\s*{num_construct}\s*|' if last_keys[-1] in 'kMBTQ' else ''}' + 
+                                    fr'{r'1\s*/|[01]\s*\.|' * add_0_point_1_slash}' + 
+                                    fr'(?<=π)\s*/\s*\d|(?<=[φ)])\s*\/\s*(?:\d|[01]\.)|(?<=[e!])\s*•\s*(?:\d|[01]\.)|(?<=[\d.πφe])\s*•\s*[πφe]|^)\s*$', example_value[:cursor_index])[0])
+        past_length = len(re.match(fr'\s*(?:\S|$)', example_value[cursor_index:])[0])
         example_value = delete_in_example(example_value, (pre_length, past_length)[k > 0])
 
 
@@ -1428,7 +1485,7 @@ def insertion_if_division_of_one(left_symbol, arg, example, destroy_nearby_scope
             example = delete_in_example(example, -len(re.search(r'(?<=[0-9.])\s*/\s*$', example[:cursor_index])[0]))
             return insert_in_example(example, f'e-{arg[1:]}')
         else:
-            return insert_in_example(example, f'e{arg[1:]}')
+            return insert_in_example(example, f'{'•' if left_symbol in 'φπevEထ)!' else ''}e{arg[1:]}')
     elif division_after_1_condition:
         return (insert_in_example, destroy_nearby_bracks)[destroy_nearby_scopes](example, f'{('/', '-')[arg in ('sin', 'cos', 'tg', 'ctg', 'log(', 'ln', 'lg')]}{arg}')
     else:
@@ -1456,12 +1513,22 @@ def exampled_value(example=None):
     return f'{' ' * example[:cursor_index].count(' ')}{example.replace(' ', '')}{' ' * example[cursor_index:].count(' ')}'
 
 
-def key_calc(key, just_from_added_win=False):
+def manage_key_event(key, just_from_added_win=False):
     global history_of_calculations, i_history, i_last_example, added_win, settings, example_value, cursor_index, can_backspace, indexes_of_selection, keyboard_layout_memory
     global last_keys
-
+    if hasattr(key, 'keysym') and key.keysym in ('less', 'greater'):
+        key_old = key
+        key = Event()
+        key.keysym = ('Left', 'Right')[key_old.keysym == 'greater']
+        key.state = 0x40000
+        key.keycode = (37, 39)[key_old.keysym == 'greater']
+        key.type = 2        # Число 2 означает KeyPress (нажатие)
+        key.x = key_old.x
+        key.y = key_old.y
+        key.widget = key_old.widget
+        key.char = ''
     bypass = bypass2 = False
-    if i_last_example != 'future' and hasattr(key, 'keysym') and key.keysym not in ('Control_L', 'Control_R'):
+    if i_last_example != 'future' and hasattr(key, 'keysym') and key.keysym not in ('Control_L', 'Control_R', 'Shift_L', 'Shift_R'):
         add_to_last_examples_if_selection_or_cursor_change()
         make_it_future()
         bypass2 = True
@@ -1472,7 +1539,7 @@ def key_calc(key, just_from_added_win=False):
         keysym = 'changed text'
         bypass = True
         entry_box.delete(0, END)
-        entry_box.insert(END, example_value) 
+        entry_box.insert(END, example_value)
         calculate_result()
         entry_box.icursor(cursor_index)
         change_width_of_entry(entry_box.get(), entry_box, result)
@@ -1587,10 +1654,10 @@ def key_calc(key, just_from_added_win=False):
             pass
         elif keysym in ('apostrophe', 'quotedbl'):
             indexes_of_selection = None
-            pyperclip.copy(result.get().replace('•', '*').replace('ထ', 'inf').replace('=', '') if keysym == 'quotedbl' else example_value.replace('•', '*').replace('ထ', 'inf'))
-            if keysym =='quotedbl':
-                result.delete(0, END)
-                result.insert(END, ' ' * bool(example_value) + '⮺')
+            pyperclip.copy(re.sub(r'E\(-(\d+)\)?', r'E-\1', result.get().replace('•10^', 'E').replace('10^', '1E')).replace('•', '*').replace('ထ', 'inf').replace('=', '') if keysym == 'quotedbl' else example_value.replace('•', '*').replace('ထ', 'inf'))
+            if keysym == 'quotedbl':
+                result.delete(bool(example_value), END)
+                result.insert(END, '⮺')
                 # main_win.after(tick_symbol_time, lambda: (result.delete(0, END), result.insert(END, ' ' * bool(example_value) + '✓')))
                 main_win.after(after_tick_symbol_time, lambda: (result.delete(0, END), calculate_result()))
             else:
@@ -1634,13 +1701,13 @@ def key_calc(key, just_from_added_win=False):
                 example_value = insertion_if_division_of_one(symbol_left_from_cursor(), 'φ', example_value)
         elif keysym in ('period', 'comma'):
             if re.search(r'\.\d+$', exampled_value()[:cursor_index]):
-                example_value = insert_in_example(example_value, '•0.')
+                example_value = insert_in_example(example_value, '•1.')
             elif symbol_left_from_cursor() != '.':
                 example_value = insert_in_example(example_value, '/' if symbol_left_from_cursor() == 'π' else '•' if symbol_left_from_cursor() in 'φe)!' else '')
-                example_value = insert_in_example(example_value, '.' if symbol_left_from_cursor().isdigit() else '0.')
+                example_value = insert_in_example(example_value, '.' if symbol_left_from_cursor().isdigit() else '1.')
             else:
                 example_value = delete_in_example(example_value, -len(re.search(r'\.\s*$', example_value[:cursor_index])[0]))
-                example_value = insert_in_example(example_value, '•0.')
+                example_value = insert_in_example(example_value, '•1.')
         elif keysym in ('s', 'c', 't', 'C'):
             example_value = insertion_if_division_of_one(symbol_left_from_cursor(), {'s': 'sin', 'c': 'cos', 't': 'tg', 'C': 'ctg'}[keysym], example_value, destroy_nearby_scopes=True)
             if symbol_right_from_cursor() != '(':
@@ -1717,11 +1784,11 @@ def key_calc(key, just_from_added_win=False):
                     example_value = insert_in_example(example_value, '(-')
                     example_value = insert_in_example(example_value, ')', right=True)
         elif keysym in ('equal', 'plus'):
-            if symbol_left_from_cursor() in '•/^√':
+            if symbol_left_from_cursor() in '•/^√' and keysym != 'plus':
                 example_value = insert_in_example(example_value, '2')
                 example_value = insert_in_example(example_value, '+')
             elif symbol_left_from_cursor() not in '0123456789φπeEvထ)|!' and keysym != 'plus':
-                example_value = insert_in_example(example_value, '1')
+                example_value = insert_in_example(example_value, '1+')
             else:
                 example_value = insert_in_example(example_value, '+')
         elif keysym in ('slash', 'colon', 'semicolon'):
@@ -1754,7 +1821,7 @@ def key_calc(key, just_from_added_win=False):
         elif keysym.isdigit():
             if re.search(r'(?:[^0-9.]|^)\s*0\s*$', exampled_value(example_value)[:cursor_index]):
                 example_value = insert_in_example(example_value, f'.{keysym}')
-            elif symbol_left_from_cursor() == 'π':
+            elif symbol_left_from_cursor() in 'πφ)':
                 example_value = insert_in_example(example_value, f'/{keysym}')
             elif re.search(fr'{num_construct}•e$', exampled_value()[:cursor_index]) and not re.search(fr'[Ee]-?{num_construct}•e$', exampled_value()[:cursor_index]):
                 example_value = delete_in_example(example_value, -len(re.search(r'•\s*e\s*$', example_value[:cursor_index])[0]))
@@ -1770,7 +1837,7 @@ def key_calc(key, just_from_added_win=False):
                 example_value = insert_in_example(example_value, f'e-{keysym}')
             elif symbol_left_from_cursor() == 'e':
                 example_value = insert_in_example(example_value, keysym)
-            elif symbol_left_from_cursor() in 'φ)!':
+            elif symbol_left_from_cursor() == '!':
                 example_value = insert_in_example(example_value, f'•{keysym}')
             else:
                 example_value = insert_in_example(example_value, keysym)
@@ -1884,6 +1951,7 @@ def key_calc(key, just_from_added_win=False):
                                 [text_entry.insert(END, val + '\n', tags[(i + 1) % 4]) for i, val in enumerate(history_of_calculations.split('\n'))]
                                 for i in range(history_of_calculations.count('\n') + 1):
                                     text_entry.tag_add('highlight', f'{i + 1}.0', f'{i + 1}.end')
+                            text_entry.tag_add(SEL, '1.0', 'end')
                         except NameError:
                             pass
         elif keysym == 'Return':
@@ -1918,12 +1986,15 @@ def key_calc(key, just_from_added_win=False):
         close_main_win_with_layout_switching()
 
         
-def real_key_calc(key, just_from_added_win=False):
+def supermanage_key_event(key, just_from_added_win=False):
     set_last_func_is_ctrl_shift_scroll(False)
-    set_del_mode(False)
-    key_calc(key, just_from_added_win)
-    if hasattr(key, 'keysym') and key.keysym not in ('apostrophe', 'quotedbl', 'Escape', 'Tab', 'Up', 'Down', 'Control_L', 'Control_R', 'Shift_L', 'Shift_R', 'Alt_L', 'Alt_R', 'Caps_Lock', 'Win_L' 'y', 'z', 'Y', 'Z'):
+    if hasattr(key, 'keysym') and key.keysym not in ('Escape', 'Tab', 'Control_L', 'Control_R', 'Shift_L', 'Shift_R', 'Alt_L', 'Alt_R', 'Caps_Lock', 'Win_L'):
+        set_del_mode(False)
+    manage_key_event(key, just_from_added_win)
+    if hasattr(key, 'keysym') and key.keysym not in ('apostrophe', 'quotedbl', 'Escape', 'Tab', 'Up', 'Down', 'Control_L', 'Control_R', 'Shift_L', 'Shift_R', 'Alt_L', 'Alt_R', 'Caps_Lock', 'Win_L', 'y', 'z', 'Y', 'Z'):
         add_to_last_examples_if_selection_or_cursor_change()
+        if tape and int(tape_canvas.cget('width')) == 0:
+            destroy_tape()
         
         
 def save_example_to_history(*key):
@@ -1989,6 +2060,7 @@ def save_example_to_history(*key):
                             text_entry.delete(1.0, END)
                             tags = (None, f'history_{color1}', f'history_{color1}', f'history_{color2}')
                             [text_entry.insert(END, val + '\n', tags[(i + 1) % 4], 'highlight') for i, val in enumerate(history_of_calculations.split('\n'))]
+                        text_entry.tag_add(SEL, '1.0', 'end')
                     except NameError:
                         pass
 
@@ -2059,7 +2131,7 @@ def smart_accelerated_scroll(key):
     steps = 1
     
     # Смягчаем порог времени до 0.35 секунд. Если вы крутите колесико активнее, скорость увеличится до x3 без пропусков логики
-    if time_delta < 0.35:
+    if time_delta < 0.35 and key.state & 0x0001:
         steps = 5
         
     if key.delta > 0:
@@ -2101,7 +2173,7 @@ def ctrl_y(*self):
     if i_last_example == 'future' or not self or 'no drawing' not in self:
         change_width_of_entry(entry_box.get(), entry_box, result)
         config_fg_and_insertbackground()
-        create_undoer_redoer_tape()
+        create_tape()
         resize_and_retheme_canvas_drawings()
     if i_last_example == 'future':
         return 1
@@ -2141,7 +2213,7 @@ def ctrl_z(*self):
     if i_last_example == 'past' or not self or 'no drawing' not in self:
         change_width_of_entry(entry_box.get(), entry_box, result)
         config_fg_and_insertbackground()
-        create_undoer_redoer_tape()
+        create_tape()
         resize_and_retheme_canvas_drawings()
     if i_last_example == 'past':
         return 1
@@ -2269,11 +2341,62 @@ def set_main_focus(event):
         is_selected = type(result_selection) is dict and result_selection['start'] != result_selection['end']
         if is_selected:
             temp_result_value = result.get()
-            pyperclip.copy(temp_result_value[result_selection['start']:result_selection['end']].replace('•', '*').replace('ထ', 'inf').replace('=', ''))
-            result.delete(0, END)
-            result.insert(END, temp_result_value[:result_selection['start']] + '⮺' + temp_result_value[result_selection['end']:])
+            value_pre_copy = re.sub(r'E\(-(\d+)\)?', r'E-\1', temp_result_value[result_selection['start']:result_selection['end']].replace('•10^', 'E').replace('10^', '1E')).replace('•', '*').replace('ထ', 'inf')
+            if value_pre_copy == '=' and result_selection['end'] == 1:
+                pyperclip.copy(entry_box.get() + temp_result_value)
+                result.delete(0, END)
+                temp_entry_value = entry_box.get()
+                entry_box.delete(0, END)
+                entry_box.insert(END, '⮺ всё скопировано')
+                main_win.after(after_tick_symbol_time, lambda: (entry_box.delete(0, END), entry_box.insert(END, temp_entry_value), result.delete(0, END), calculate_result(), change_width_of_entry(entry_box.get(), entry_box, result)))
+            elif re.fullmatch(r'=[^Ee]+', value_pre_copy.replace('-', '')) and re.match(r'\s*\.?\s*\d', temp_result_value[result_selection['end']:]):
+                raw_entry_box_ans = str(solve_example(entry_box.get(), get_raw_ans=True))
+                raw_entry_box_ans_digits = (raw_entry_box_ans + '.0' * ('.' not in raw_entry_box_ans)).replace(' ', '').lstrip('-').strip('0').replace('.', '')
+                value_pre_copy_digits = (value_pre_copy + '.0' * ('.' not in value_pre_copy)).replace(' ', '').lstrip('=-').strip('0').replace('.', '')
+                if not value_pre_copy_digits:
+                    value_pre_copy_digits = '0'
+                print(raw_entry_box_ans_digits)
+                print(value_pre_copy_digits)
+                if int(raw_entry_box_ans_digits[len(value_pre_copy_digits)]) >= 5:
+                    value_pre_copy_digits = str(int(value_pre_copy_digits) + 1)
+
+                digit_cnt = 0
+                for indx in range(len(value_pre_copy) - 1, -1, -1):
+                    if value_pre_copy[indx].isdigit():
+                        digit_cnt += 1
+                        if digit_cnt > len(value_pre_copy_digits):
+                            break
+                        value_pre_copy = f'{value_pre_copy[:indx]}{value_pre_copy_digits[-digit_cnt]}{value_pre_copy[indx + 1:]}'
+
+                if digit_cnt == len(value_pre_copy_digits) - 1:
+                    digit_cnt += 1
+                    value_pre_copy = re.sub(r'^(=?-?)', r'\g<1>' + f'{value_pre_copy_digits[-digit_cnt]}', value_pre_copy)  # защита от слипания единичек в \11 (такой группы нет)
+                    value_pre_copy = re.sub(r'(\d)(\d\d\d)', r'\1 \2', value_pre_copy)
+                digit_amount_in_after_copy_range = len(re.findall(r'\d', temp_result_value[result_selection['end']:temp_result_value.find('.') if ('.' in temp_result_value) else len(temp_result_value)]))
+                temp_result_value_E_modified = re.sub(r'E\(-(\d+)\)?', r'E-\1', temp_result_value.replace('•10^', 'E').replace('10^', '1E'))
+                if '.' in value_pre_copy:
+                    value_pre_copy = value_pre_copy.rstrip('0 ').rstrip('.')  # точку позже так как она вместе с нулем сотрется пред ней
+                    if E_part := re.search(fr'E-?\d+', temp_result_value_E_modified):
+                        value_pre_copy += E_part[0]
+                else:
+                    if E_part := re.search(fr'E(-?\d+)', temp_result_value_E_modified):
+                        value_pre_copy += 'E' + str(int(E_part[1]) + digit_amount_in_after_copy_range)
+                    else:
+                        value_pre_copy += f'{digit_amount_in_after_copy_range % 3 * '0'}{(digit_amount_in_after_copy_range // 3) * ' 000'}'
+                        value_pre_copy = value_pre_copy.replace(2 * ' ', ' ')
+                print(value_pre_copy)
+                value_pre_copy = value_pre_copy.replace('=', '')
+                pyperclip.copy(value_pre_copy)
+                result.delete(0, END)
+                result.insert(END, f'≈{value_pre_copy} ⮺ скопировано с округлением')
+                main_win.after(3 * after_tick_symbol_time, lambda: (result.delete(0, END), calculate_result()))
+            else:
+                value_pre_copy = value_pre_copy.replace('=', '')
+                pyperclip.copy(value_pre_copy)
+                result.delete(0, END)
+                result.insert(END, '=' if not (a := temp_result_value[:result_selection['start']]) else a + '⮺' + temp_result_value[result_selection['end']:])
+                main_win.after(after_tick_symbol_time, lambda: (result.delete(0, END), calculate_result()))
             # main_win.after(tick_symbol_time, lambda: (result.delete(0, END), result.insert(END, temp_result_value[:result_selection['start']] + '✓' + temp_result_value[result_selection['end']:])))
-            main_win.after(after_tick_symbol_time, lambda: (result.delete(0, END), calculate_result()))
 
             original_cursor_color = entry_box.cget('insertbackground')
             entry_box.config(insertbackground=entry_box.cget('bg'))
@@ -2465,12 +2588,23 @@ def replace_paste_symbols(string):
     return string.replace('x', '•').replace('*', '•').replace('inf', 'ထ').replace('∞', 'ထ').replace('–', '-').replace('–', '-').replace('×', '•').replace('−', '-').replace('⋅', '•').replace('••', '^').replace(' ', ' ')
 
 
+def get_alternate_log_var(pasted_log_val):
+    while re.search(r'\(([^()]*)\)', pasted_log_val):
+        old_pasted_log_val = pasted_log_val
+        pasted_log_val = re.sub(r'log\(([^()]*)\)by\(([^()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', pasted_log_val)
+        pasted_log_val = re.sub(r'(?<!by)(?<!log)\(([^()]*)\)', r'&@@&@@\1@&&@&&', pasted_log_val)
+        if old_pasted_log_val == pasted_log_val:
+            return 'непарность скобок мешает втсавке логарифма! ' + pasted_log_val.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
+
+    return pasted_log_val.replace('&@@&@@', '(').replace('@&&@&&', ')')
+
+
 def paste_text(*key):
     global indexes_of_selection, cursor_index, can_backspace, example_value
     if indexes_of_selection is None:
         indexes_of_selection = {'start': cursor_index, 'end': cursor_index}
-    
-    replaced_paste = re.sub(r'E0+(\d)', r'E\1', pyperclip.paste().replace('E+', 'E')).replace('E', '#').lower().replace('#', 'E')
+
+    replaced_paste = re.sub(r'E0+(\d)', r'E\1', pyperclip.paste().replace('E+', 'E').replace('#', '')).replace('E', '#').lower().replace('#', 'E')
 
     if re.search(r'2\d{3}\.(?:0\d|11|12)\.(?:[0-3]\d|31) (?:[01]\d|2[0-3])(?::[0-5]\d){2}', replaced_paste):
         # Алгоритм замены для истории
@@ -2506,11 +2640,13 @@ def paste_text(*key):
                 item2 = re.sub(r' ?([^0-9\.]) ?', r'\1', item2)
 
                 while re.search(a := r'\(([^();]*)\)', item2):
-                    item2 = re.sub(r'log\(([^;()]*);([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', item2)
+                    old_cycle_step_item2 = item2
+                    item2 = re.sub(r'log\(([^;()]*)(?:;|\)by\(|\)base\()([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', item2)
                     item2 = re.sub(fr'log{num_construct}\(([^;()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', item2)
-                    item2 = re.sub(r'\(([^();]*)\)', r'&@@&@@\1@&&@&&', item2)
-                item2 = re.sub(r'log\(([^;()]*);([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', item2)
-                item2 = re.sub(fr'log{num_construct}\(([^;()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', item2)
+                    item2 = re.sub(r'(?<!by)(?<!log)\(([^();]*)\)', r'&@@&@@\1@&&@&&', item2)
+                    if old_cycle_step_item2 == item2:
+                        item2 = 'ошибка вставки! ' + item2.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
+                        break
                 item2 = item2.replace('&@@&@@', '(').replace('@&&@&&', ')')
                 item2 = item2.replace('base', 'by')
 
@@ -2611,26 +2747,34 @@ def paste_text(*key):
             replaced_paste = re.sub(r' ?([^0-9\.]) ?', r'\1', replaced_paste)
 
             while re.search(a := r'\(([^();]*)\)', replaced_paste):
-                replaced_paste = re.sub(r'log\(([^;()]*);([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', replaced_paste)
+                old_cycle_step_replaced_paste = replaced_paste
+                replaced_paste = re.sub(r'log\(([^;()]*)(?:;|\)by\(|\)base\()([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', replaced_paste)
                 replaced_paste = re.sub(fr'log{num_construct}\(([^;()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', replaced_paste)
-                replaced_paste = re.sub(r'\(([^();]*)\)', r'&@@&@@\1@&&@&&', replaced_paste)
-            replaced_paste = re.sub(r'log\(([^;()]*);([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', replaced_paste)
-            replaced_paste = re.sub(fr'log{num_construct}\(([^;()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', replaced_paste) #log(log100(15+(log4(1/64)+log8(64))*(5+5))+log(69;r69);2)
-            replaced_paste = replaced_paste.replace('&@@&@@', '(').replace('@&&@&&', ')')
+                replaced_paste = re.sub(r'(?<!by)(?<!log)\(([^();]*)\)', r'&@@&@@\1@&&@&&', replaced_paste)
+                if old_cycle_step_replaced_paste == replaced_paste:
+                    replaced_paste = 'ошибка вставки! ' + replaced_paste.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
+                    break
+
+            replaced_paste = re.sub(r'log\(([^;()]*)(?:;|\)by\(|\)base\()([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', replaced_paste)
+            replaced_paste = re.sub(fr'log{num_construct}\(([^;()]*)\)', r'log&@@&@@#log(2;log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))\2@&&@&&by&@@&@@\1@&&@&&', replaced_paste) #log(log100(15+(log4(1/64)+log8(64))*(5+5))+log(69;r69);2)
+            replaced_paste = replaced_paste.replace('&@@&@@', '(').replace('@&&@&&', ')') #log(2;log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))
             replaced_paste = replaced_paste.replace('base', 'by')
 
-            replaced_paste = re.sub(r'(?<=[0-9φπeထ)!])E', '•10^', replaced_paste)
-            replaced_paste = re.sub(r'(?<=[^√])E', '1•10^', replaced_paste).replace('E', '•10^')
+            # replaced_paste = re.sub(r'(?<=[0-9φπeထ)!])E', '•10^', replaced_paste)
+            # replaced_paste = re.sub(r'(?<=[^√])E', '1•10^', replaced_paste).replace('E', '•10^')
             replaced_paste = re.sub(r'((?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln|lg|log)(\d+\.?\d*|\.\d+)(\()', r'\1#\2#\3', replaced_paste)
             while re.search(mul_between_digits_and_constants := r'([φπe\)])([0-9φπe\.\(])', replaced_paste):
                 replaced_paste = re.sub(mul_between_digits_and_constants, r'\1•\2', replaced_paste)
             while re.search(mul_between_digits_and_constants := r'([0-9φπe\.\)])([φπe\(]|d(?!i)|arc|sin|cos|c?tg|ln|lg|log)', replaced_paste):
                 replaced_paste = re.sub(mul_between_digits_and_constants, r'\1•\2', replaced_paste)
+            # print(replaced_paste)
             replaced_paste = re.sub(r'(\d)√', r'\1•√', replaced_paste)
             replaced_paste = replaced_paste.replace('#', '')
 
     if not re.search(r'[а-яА-ЯЁё]', replaced_paste):
         replaced_paste = replace_paste_symbols(replaced_paste)
+    if 'log' in replaced_paste:
+        create_tape('info', example_value + get_alternate_log_var(replaced_paste) + ' – нажми меня, чтобы поменять местами аргументы логарифмов')
     change_text(replaced_paste)
     return 'break'
 
@@ -2647,7 +2791,7 @@ def change_text(pasted, start=None, end=None):
     cursor_index = start + len(pasted)
     indexes_of_selection = None
     can_backspace = cursor_index != 0
-    key_calc((cursor_index, end), False)
+    manage_key_event((cursor_index, end), False)
 
     example_value = re.sub(r'(?<![\d.)])\s*E', 'e', example_value)
     example_value = re.sub(r'(?<=[\d.)])\s*e|e\s*(?=[\d.(])', 'E', example_value)
@@ -2950,6 +3094,11 @@ def backspace_undo_handler(key):
                 set_cursor_shift_to_the(key, define_future_of_cursor(('left', 'right')[key.delta > 0]))
         else:
             scroll_timeout = 0
+        config_fg_and_insertbackground()
+        if indexes_of_selection and indexes_of_selection['start'] != indexes_of_selection['end']:
+            sel_del_info = f'удалить {example_value[indexes_of_selection['start']:indexes_of_selection['end']]} правой кнопкой'
+            create_tape(tape_type='info', info_blit=sel_del_info)
+            resize_and_retheme_canvas_drawings(info_blit=sel_del_info)
 
 
 main_win.bind('<Shift-MouseWheel>', backspace_undo_handler) # lambda key: (ctrl_z, ctrl_y)[key.delta < 0]())
@@ -2967,7 +3116,7 @@ main_win.bind('<Control-Shift-Down>', lambda key: None)  # не удалять! 
 
 main_win.bind('<Control-Key>', lambda key: None)
 main_win.bind('<Alt-Key>', lambda key: None)
-main_win.bind('<Key>', lambda key: real_key_calc(key, True))
+main_win.bind('<Key>', lambda key: supermanage_key_event(key, True))
 
 
 def auto_change_size_of_everything(key=None, size_definition=True):
@@ -3201,9 +3350,8 @@ def check_theme_or_geometry_change():
             pyautogui.hotkey('ctrl', 'backspace')
             main_win.after(20, unbind_left_button)
             example_value = entry_box.get()
-    elif curr_time - tape_creation_time > 1.5:
+    elif curr_time - tape_creation_time > (1.5, 10)[bool(tape) and int(tape_canvas.cget('width')) == 0 and 'нажми меня, чтобы поменять местами аргументы логарифмов' in tape_info_label.cget('text')]:
         destroy_tape()
-        tape_creation_time = 10 ** 100
     main_win.after(50, check_theme_or_geometry_change)  # проверять каждую двадцатую секунды
 last_theme = is_dark_theme()
 check_theme_or_geometry_change()
