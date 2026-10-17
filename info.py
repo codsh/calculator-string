@@ -37,9 +37,9 @@ darc_generator = tuple([f'{i}{j}' for i in ('darc', 'arc', 'd') for j in ('sin',
 ddarc_gen = tuple([f'{i}{j}' for i in ('darc', 'arc', 'd', '') for j in ('sin', 'cos', 'ctg', 'tg')])
 
 united_symbols = ('div', 'mod') + darc_generator + ('log', 'sin', 'cos', 'ctg') + ('ln', 'lg', 'tg', 'by')
-composite_trig_funcs = tuple(i for i in darc_generator if i not in ('d', 'arc', 'darc'))
+composite_trig_funcs = tuple(i for i in darc_generator if i not in ('d', 'arc', 'darc')) + ()
 united_symbols_with_scopes = (tuple(f'{i}{j}' for j in ('|', '(') for i in darc_generator)
-     + ('log(', 'sin(', 'cos(', 'ctg(', ')by(') + ('log|', 'sin|', 'cos|', 'ctg|', '|by|', '|by(', ')by|') + ('ln|', 'lg|', 'tg|') + ('ln(', 'lg(', 'tg('))
+     + ('log(', 'sin(', 'cos(', 'ctg(', ')by(') + ('log|', 'sin|', 'cos|', 'ctg|', '|by|', '|by(', ')by|') + ('by(', ')by', '|by', 'by|') + ('ln|', 'lg|', 'tg|') + ('ln(', 'lg(', 'tg('))
 united_symbols_without_scopes = darc_generator + ('sin', 'cos', 'ctg', 'tg', 'ln', 'lg')  # порядок важен, сначала котангенс а лишь потом тангенс, чтобы удалялся ctg а не c tg
 full_funcs_with_Uu = tuple((f'{i}{j}' for i in ('sin', 'cos', 'tg', 'ctg', 'lg', 'ln') for j in ('()', 'Uu'))) + tuple((f'log{i}by{j}' for i in ('()', 'Uu') for j in ('()', 'Uu')))
 
@@ -57,6 +57,7 @@ last_time_main_win_geometry_change = 0
 last_val_before_geometry_change = 'если это вставится, значение использовали до его определения !!!техническая ошибка разработчиков!!!'
 last_time_round_change = 0
 num_construct = r'((?:\d+[.,]?\d*|[.,]\d+)(?:[eE]-?\d*[.,]?\d*)?|[φπeE])'
+num_construct_with_spaces = r'((?:(\d\s*)+(?:[.,]\s*)?(?:\d\s*)*|(?:[.,]\s*)(?:\d\s*)+)(?:[eE]\s*(?:-\s*)?(?:\d\s*)*(?:[.,]\s*)?(?:\d\s*)*)?|[φπeE])'
 word_construct = '[а-яА-ЯЁё]+'
 tokenator = r'(d?(?:arc)?(?:sin|cos|c?tg)|d?arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\))'
 super_tokenator = r'(sin|cos|c?tg|arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\)|[\dφπeE.])'
