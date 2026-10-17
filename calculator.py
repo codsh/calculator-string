@@ -2064,7 +2064,6 @@ def manage_key_event(key, just_from_added_win=False):
         calculate_result()
     can_backspace = entry_box.index('insert') != 0
     
-    
     change_width_of_entry(entry_box.get(), entry_box, result)
 
     
