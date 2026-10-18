@@ -20,6 +20,45 @@ pyautogui.PAUSE = 0
 import runpy
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
+GetWindowThreadProcessId = user32.GetWindowThreadProcessId
+AttachThreadInput = user32.AttachThreadInput
+WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))
+IsWindowVisible = user32.IsWindowVisible
+GetWindowTextLengthW = user32.GetWindowTextLengthW
+GetWindowTextW = user32.GetWindowTextW
+GetClassNameW = user32.GetClassNameW
+SetForegroundWindow = user32.SetForegroundWindow
+
+def create_fake_main_win():
+    global fake_main_win
+    fake_main_win = Toplevel()
+    fake_main_win.title(main_win.title())
+    fake_main_win['bg'] = main_win['bg']
+
+    fake_main_win.wm_attributes('-topmost', main_win.wm_attributes('-topmost'))
+    fake_main_win.attributes('-alpha', main_win.attributes('-alpha'))
+    fake_main_win.overrideredirect(main_win.overrideredirect())
+
+    fake_entry_box = Entry(fake_main_win, font=entry_box.cget('font'), fg=entry_box.cget('fg'), bg=entry_box.cget('bg'), borderwidth=0, insertwidth=1)
+    fake_result = Entry(fake_main_win, font=entry_box.cget('font'), fg=entry_box.cget('fg'), bg=entry_box.cget('bg'), borderwidth=0, insertwidth=1)
+    (fake_entry_box.insert(END, entry_box.get()), fake_result.insert(END, result.get()))
+    entry_box_place_info, result_place_info = entry_box.place_info(), result.place_info()
+    entry_box_place_info.pop('in'), result_place_info.pop('in')
+    (fake_entry_box.place(entry_box_place_info), fake_result.place(result_place_info))
+    fake_main_win.geometry(main_win.geometry())
+
+
+def switch_to_next_window():
+    # Прячем калькулятор с экрана: в этот момент Windows находится в шоке и ПРИНУДИТЕЛЬНО отдает фокус и каретку окну, которое было под ним.
+    main_win.after(50, lambda: create_fake_main_win())
+    main_win.after(70, lambda: main_win.withdraw())
+    # Через 200 миллисекунд возвращаем калькулятор обратно. Он появится на том же месте, но фокус останется в чужом окне, а каретка там гарантированно активируется!
+    main_win.after(150, lambda: main_win.deiconify())
+    main_win.after(170, lambda: fake_main_win.destroy())
+    main_win.after(200, lambda: main_win.event_generate('<FocusOut>'))
+
+    return 'break'
+
 
 calculator_greeting = 'нажми [?] или ctrl+[/], чтобы узнать как использовать калькулятор'
 
@@ -142,7 +181,7 @@ with open(f'{FILES}/recents.json', 'r') as recents_file:
         recents = json.load(recents_file)
     except json.decoder.JSONDecodeError:
         recents = {'closing time': [0 for _ in range(3)], 'example before closing': '', 'cursor before closing': 0, 'cursor before moving calc': 0,
-                   'recent examples': [['', '', '', ''] for _ in range(20)], 'last examples': [['', '', '', '', '', ''],],
+                   'recent examples': [['', '', '', ''] for _ in range(100)], 'last examples': [['', '', '', '', '', ''],],
                    'low': MAX_COORD, 'mid': MAX_COORD // 2, 'top': 0, 'mouse coords': {'x': 0, 'y': 0}, 'win theme alike calc': True, 'rounding info longer': 3}
         rewrite_json('recents')
 with open(f'{FILES}/settings.json', 'r') as settings_file:
@@ -862,7 +901,7 @@ def calculate_result():
 
     if add_to_recents(example_value):
         recents['recent examples'].append([example_value, result.get().strip('='), perfect_example, cursor_index])
-    if len(recents['recent examples']) > 20:
+    if len(recents['recent examples']) > 100:
         recents['recent examples'].pop(0)
     config_fg_and_insertbackground()
     
@@ -925,8 +964,8 @@ def disable_editing_added_win_text(key):
         elif keysym in ('y', 'z'):
             (ctrl_y, ctrl_z)[keysym == 'z']()
         return "break"
-    elif len(key.char):  # Блокируем ввод символов
-        return "break"
+    elif len(key.char) or key.keysym == 'Delete':  # Блокируем ввод символов
+        return 'break'
     
     
 def disable_left_mouse_button_clicking(key):
@@ -1009,26 +1048,30 @@ def create_added_win(win_type):
     
     text_entry = Text(added_win, bg=('#' + '10' * 3, '#' + 'e9' * 3)[settings['theme'] == 'light'],
                       fg=entry_box.cget('fg'), font=('Arial', int(HEIGHT // (2.3, 2)[is_help]), 'bold'),
-                      bd=0, exportselection=0)
+                      bd=0, exportselection=0, padx=0, pady=0)
     
     text_entry.tag_config("highlight", background=('#' + '11' * 3, '#' + 'e8' * 3)[theme_is_light])
     text_entry.place(x=14, y=0, width=WIDTH + 1, height=MAX_COORD - 2 * TASKBAR_HEIGHT)
     
     scrollbar_style = ttk.Style()
-    scrollbar_style.theme_use('clam')
-    i = not theme_is_light
-    scrollbar_style.configure('App.Vertical.TScrollbar', background=("#dcdcdc", "#3a3a3a")[i], troughcolor=("#ffffff", "#1f1f1f")[i],
-                              arrowcolor=("#222222", "#dddddd")[i], relief="flat")
-    scrollbar_style.map('App.Vertical.TScrollbar', background=[("active", ("#cfcfcf", "#4a4a4a")[i]), ("pressed", ("#bdbdbd", "#5a5a5a")[i])])
+    scrollbar_style.theme_use('classic')
+    # i = not theme_is_light
 
     scrollbar_history_calc = ttk.Scrollbar(added_win, orient='vertical', command=text_entry.yview)
     scrollbar_history_calc.configure(style='App.Vertical.TScrollbar')
     scrollbar_history_calc.pack(side=LEFT, fill=Y)
+    scrollbar_history_calc.bind('<B1-Motion>', move_added_win)
+    scrollbar_history_calc.bind('<ButtonPress-1>', on_pushing_left_button)
+
     text_entry['yscrollcommand'] = scrollbar_history_calc.set
     
     text_entry.tag_configure('sel', background=('#' + '38' * 3, '#' + 'b7' * 3)[settings['theme'] == 'light'])
     text_entry.tag_raise('sel')
     text_entry.config(insertbackground=entry_box.cget('insertbackground'), insertwidth=1) # , selectbackground=('#' + '38' * 3, '#' + 'b7' * 3)[settings['theme'] == 'light']
+    scrollbar_style.configure('App.Vertical.TScrollbar', background=(("#9C9C9C", 'gray40')[theme_is_light], ('#' + '90' * 3, '#' + '5f' * 3)[theme_is_light])[added_win.title() == 'история'],
+                              troughcolor=(('#' + '11' * 3, '#' + 'e8' * 3)[theme_is_light], text_entry.cget('bg'))[added_win.title() == 'инструкция'],
+                              arrowcolor=text_entry.cget('bg'), relief='flat', borderwidth=0)
+    scrollbar_style.map('App.Vertical.TScrollbar', background=[('active', text_entry.cget('fg'))])
     
     added_win.bind('<Key>', disable_editing_added_win_text)
     text_entry.bind('<Key>', disable_editing_added_win_text)
@@ -1069,7 +1112,17 @@ def create_added_win(win_type):
     
     added_win.bind('<Shift-MouseWheel>', move_added_win_scrolling_horizontally)
     added_win.bind('<Control-MouseWheel>', lambda key: change_text_size(increase=key.delta > 0))
+
+    set_window_theme_border(window=added_win, is_dark_theme=settings['theme'] == 'dark')
     (finish_to_history_win, finish_to_help_win)[is_help]()
+
+
+def change_help_geometry():
+    widget_font = font.Font(font=('Arial', int(HEIGHT // 2)))
+    lines = text_entry.get("1.0", "end-1c").split('\n')
+    line_with_max_pixels = None if not lines else max(widget_font.measure(line) for line in lines)
+    added_win.geometry(f'{min(line_with_max_pixels + 8 * 2 + 1, WIDTH + 8 * 2 + 1)}x{MAX_COORD - 2 * TASKBAR_HEIGHT}+{settings['x']}+0')
+
 
 def finish_to_help_win():
     theme_is_light = settings['theme'] == 'light'
@@ -1093,17 +1146,19 @@ def finish_to_help_win():
         color = ((black,) * 4 + (blue, green, gray) + (red,) * 3)[sum([i >= el for el in tag_rows])]
         text_entry.insert(END, val, f'help_{color}_{weight}')
 
+    change_help_geometry()
+
+
 def finish_to_history_win():
     theme_is_light = settings['theme'] == 'light'
     
     added_win.wm_attributes("-transparentcolor", ('#' + '10' * 3, '#' + 'e9' * 3)[settings['theme'] == 'light'])
     added_win.bind('<Control-Alt-Up>', lambda key: scroll_text(-1))
     added_win.bind('<Control-Alt-Down>', lambda key: scroll_text(1))
-    scrollbar_history_calc.bind('<B1-Motion>', move_added_win)
-    scrollbar_history_calc.bind('<ButtonPress-1>', on_pushing_left_button)
     added_win.overrideredirect(True)
     added_win.wm_attributes('-topmost', 1)
     added_win.geometry(f'{WIDTH + 8 * 2 + 1}x{MAX_COORD - 2 * TASKBAR_HEIGHT}+{settings['x']}+0')
+    
     
     color1 = ('#' + 'b0' * 3, '#' + '2f' * 3)[theme_is_light]
     color2 = ('#' + '90' * 3, '#' + '5f' * 3)[theme_is_light]
@@ -1158,7 +1213,8 @@ def move_on_lasts(x, y):
 
 def shift_info_for_more_comftable_reading(key):
     set_tape_creation_time(key)
-    tape_info_label.place(x=tape_info_label.winfo_x() + WIDTH // 51 * (1, -1)[key.delta < 0], y=0)
+    tape_label_width = tape_info_label.winfo_width()
+    tape_info_label.place(x=0 if tape_label_width < WIDTH else a if (b := -abs(WIDTH - tape_label_width) - WIDTH // 120) <= (a := (tape_info_label.winfo_x() + WIDTH // 51 * (1, -1)[key.delta < 0])) <= 0 else (b - WIDTH // 120, 0)[a > 0], y=0)
 
 
 def create_tape(tape_type='undo-redo', info_blit='', info_action=None):
@@ -1217,7 +1273,7 @@ def tape_text_color(light_up_indxs, lst, indx):
 def on_hover_oval(arrow_tag): tape_canvas.itemconfig(arrow_tag, fill=('#909054', '#5f5f9b')[settings['theme'] == 'light'])
 def on_leave_oval(arrow_tag): tape_canvas.itemconfig(arrow_tag, fill=('white', 'black')[settings['theme'] == 'light'])
 def on_hover_rect(rect_tag, i):
-    tape_canvas.create_text(i + HEIGHT // 2 + 1, 3 * HEIGHT // 8, font=('Arial', HEIGHT // 2, 'bold'), anchor=CENTER, state=DISABLED, fill=('white', 'black')[settings['theme'] == 'light'],
+    tape_canvas.create_text(i + HEIGHT // 2 + 1, 3 * HEIGHT // 8, font=('Arial', HEIGHT // 2), anchor=CENTER, state=DISABLED, fill=('white', 'black')[settings['theme'] == 'light'],
                             text=rect_tag[4:] if int(rect_tag[4:]) == 0 else '-' + rect_tag[4:] if '-' not in rect_tag else rect_tag[1 + 4:], tags='text' + rect_tag)
 def on_leave_rect(rect_tag):
     tape_canvas.delete('text' + rect_tag)
@@ -1226,8 +1282,7 @@ def resize_and_retheme_canvas_drawings(info_blit=''):
     global tape_canvas, tape_creation_time, tape_info_label, oval_center_x, oval_center_y, oval_radius
     tape.geometry(f'{WIDTH}x{HEIGHT}+{MIN_X_COORD}+{settings['y'] - HEIGHT if settings['y'] - HEIGHT > 0 else settings['y'] + HEIGHT}')
     if int(tape_canvas.cget('width')) > 0:
-        tape_canvas.config(width=WIDTH, height=HEIGHT)
-        tape_canvas.config(bg=entry_box.cget('bg'))
+        tape_canvas.config(width=WIDTH, height=HEIGHT, bg=entry_box.cget('bg'))
         tape_canvas.delete('all')
         lst = get_tape_scale()
         i_num_last_example = (-1, len(recents['last examples']) - 1)[i_last_example == 'future'] if type(i_last_example) == str else i_last_example
@@ -1252,7 +1307,7 @@ def resize_and_retheme_canvas_drawings(info_blit=''):
                     strdx_info = str(indx_info)
                     the_rect_tag = 'rect' + str(indx_info)
                     
-                    tape_canvas.create_text(i + HEIGHT // 2 + 1, 3 * HEIGHT // 8, font=('Arial', HEIGHT // 2, 'bold'), anchor=CENTER, fill=tape_text_color((0,), lst, indx),
+                    tape_canvas.create_text(i + HEIGHT // 2 + 1, 3 * HEIGHT // 8, font=('Arial', HEIGHT // 2), anchor=CENTER, fill=tape_text_color((0,), lst, indx),
                                             text=strdx_info if indx_info == 0 else '-' + strdx_info if '-' not in strdx_info else strdx_info[1:], tags='text' + str(indx_info))
                     tape_canvas.tag_bind('text' + str(indx_info), '<Enter>', lambda event, rect_tag=the_rect_tag, i=i: on_hover_rect(rect_tag, i))
                     tape_canvas.tag_bind('text' + str(indx_info), '<Leave>', lambda event, rect_tag=the_rect_tag: on_leave_rect(rect_tag))
@@ -1312,7 +1367,7 @@ main_win['bg'] = white_or_black
 
 def force_entry_copy(key):
     global indexes_of_selection
-    main_win.after(150, lambda: pyautogui.press('\''))  # минимальное значение в миллисекундах, чтобы прекратить выделение копируемого окна
+    main_win.after(150, lambda: main_win.event_generate('<apostrophe>'))  # минимальное значение в миллисекундах, чтобы прекратить выделение копируемого окна
     return 'break'
 entry_box = Entry(main_win, font=('Arial', HEIGHT // 2), fg=white_or_black, bg=white_or_black, borderwidth=0, insertwidth=1, insertontime=700, insertofftime=500, exportselection=0)
 entry_box.bind('<Double-Button-1>', force_entry_copy)
@@ -1324,7 +1379,7 @@ indexes_of_selection = None
 can_backspace = entry_box.index('insert') != 0
 
 result = Entry(main_win, font=('Arial', HEIGHT // 2), fg=white_or_black, bg=white_or_black, borderwidth=0, insertwidth=1, insertontime=700, insertofftime=500, exportselection=0)
-result.bind('<Double-Button-1>', lambda key: pyautogui.press('"'))
+result.bind('<Double-Button-1>', lambda key: main_win.event_generate('<quotedbl>'))
 change_width_of_entry(recents['example before closing'], entry_box, result)
 example_value = entry_box.get()
 
@@ -1362,6 +1417,16 @@ keyboard.add_hotkey('win+space', set_keyboard_layout_memory)
 
 
 def matching_when_cursor_on_regex(left_regex, right_regex):
+    global example_value
+    if left_regex == right_regex == '|':
+        modUle_example_value = re.sub(r'^(\s*)(.*)(\s*)$', r'\1(\2)\3', example_value)
+        for i in range(len(modUle_example_value) - 1):
+            if modUle_example_value[i + 1] == '|':
+                module_type = 'Uu'[modUle_example_value[i] in '0123456789!)ueπφE' or bool(re.match(r'[+•/^!\)]|mod|div', modUle_example_value[i + 2:]))]
+                modUle_example_value = modUle_example_value[:i + 1] + module_type + modUle_example_value[i + 2:]
+                example_value = example_value.replace('|', module_type, 1)
+        modUle_example_value = re.sub(r'^(\s*)\((.*)\)(\s*)$', r'\1\2\3', modUle_example_value)
+
     left_match = re.search(fr'{left_regex}\s*$', example_value[:cursor_index])
     right_match = re.match(fr'\s*{right_regex}', example_value[cursor_index:])
     if left_match and right_match:
@@ -1405,16 +1470,17 @@ def delete_to_the(k):
     if (after_1_minus_root_condition := re.fullmatch(r'(?:[^0-9veE\.]|^)\s*1\s*(\-\s*√)', example_value[:cursor_index])) and last_key_without_minus_for_root:
         example_value = delete_in_example(example_value, -len(after_1_minus_root_condition[1]))
         return
-    for indx, left_match_check in enumerate(reunite(('log(', 'log|'))):
-        for right_match_check in reunite(((')by()', ')by||'), ('|by||', '|by()'))[indx]):
-            if (matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}{left_match_check}', right_match_check)):
+    for indx, left_match_check in enumerate(reunite(('log(', 'log|', 'log'))):
+        for right_match_check in reunite(((')by()', ')by||', ')by'), ('|by||', '|by()', '|by'), ('by||', 'by()', 'by'))[indx]):
+            if ((matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}{left_match_check}', right_match_check)) and
+                (k == -1 or left_match_check.replace('s*', '').replace('\\', '') + right_match_check.replace('s*', '').replace('\\', '') in ('logby', 'logby()', 'logby||'))):
                 example_value = delete_in_example(example_value, -len(matches[0][0]))
-                if after_1_condition := re.search(r'(?:[^0-9veE\.]|^)\s*1\s*(\-\s*)$', example_value[:cursor_index]):
+                if (after_1_condition := re.search(r'(?:[^0-9veE\.]|^)\s*1\s*(\-\s*)$', example_value[:cursor_index])) and left_match_check + right_match_check != 'logby':
                     example_value = delete_in_example(example_value, -len(after_1_condition[1]))
                 example_value = delete_in_example(example_value, len(matches[1][0]))
                 return
-    for indx, left_match_check in enumerate(reunite(('log()by(', 'log||by(', 'log||by|', 'log()by|'))):
-        right_match_check = (r'\)', r'\|')[indx > 1]
+    for indx, left_match_check in enumerate(reunite(('log()by(', 'log||by(', 'log||by|', 'log()by|', 'log()by', 'log||by'))):
+        right_match_check = (r'\)', r'\|', r'')[indx // 2]
         if (matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}{left_match_check}', right_match_check)) and k == -1:
             example_value = delete_in_example(example_value, -len(matches[0][0]))
             if after_1_condition := re.search(r'(?:[^0-9veE\.]|^)\s*1\s*(\-\s*)$', example_value[:cursor_index]):
@@ -1428,14 +1494,14 @@ def delete_to_the(k):
         example_value = delete_in_example(example_value, -len(i[0]))
         example_value = insert_in_example(example_value, ('√', 'e' + '-' * (last_keys_not_having_keytype_changed[-1] == 'minus'))[last_keys_not_having_keytype_changed[-1] != 'r'])
     elif cursor_index > 0 and k == -1 or cursor_index < len(example_value) and k == 1:
-        add_0_point_1_slash = bool(re.search(r'(?:[^0-9veE\.]|^)\s*1\s*[+/]\s*|(?:[^0-9\.]\s*|^)[01]\s*\.\s*', example_value[:cursor_index])) and bool(re.fullmatch(r'\s*', example_value[cursor_index:]))
+        add_0_point_1_slash = bool(re.search(r'(?:[^0-9veE\.]|^)\s*1\s*[+/]\s*|(?:[^0-9\.]\s*|^)[01]\s*\.\s*', example_value[:cursor_index])) and bool(re.search(r'\s*(?:$|\))', example_value[cursor_index:]))
         special_cases_2plus = bool(re.search(r'(?:(?:[+-•/^√(]|^)\s*2\s*[•^]|[•/^√]\s*2\s*[+/])\s*', example_value[:cursor_index])) and bool(re.match(r'\s*(?:$|)', example_value[cursor_index:]))
         pre_length = -len(re.search(fr'(?:\S|{fr'\^\s*{'ujUJ'.index(last_keys_not_having_keytype_changed[-1]) + 2}\s*|' if last_keys_not_having_keytype_changed[-1] in 'ujUJ' else ''}' + 
                                     fr'{r'(?:\S|(?:(?<!^)1\s*)?/\s*2\s*)|' if last_keys_not_having_keytype_changed[-1] == 'h' else ''}' + 
                                     fr'{fr'•?\s*[Ee](?:\s*-)?\s*(?:{(3, 6, 9, 12, 15)['kMBTQkm'.index(last_keys_not_having_keytype_changed[-1]) % 5]})\s*|' if last_keys_not_having_keytype_changed[-1] in 'kMBTQkm' else ''}' +
                                     fr'{r'1\s*[+/]|[01]\s*\.|' * add_0_point_1_slash}' + fr'{r'2\s*[+•^/]|' * special_cases_2plus}' + 
                                     fr'(?<=π)\s*/\s*\d|(?<=[φ)])\s*(?:/\s*(?:\d|0\.)|•\s*1\.)|(?<=[e!])\s*•\s*(?:\d|[01]\.)|(?<=[\d.πφe])\s*•\s*[πφe]|^)\s*$', example_value[:cursor_index])[0])
-        
+
         past_length = len(re.match(fr'\s*(?:\S|$)', example_value[cursor_index:])[0])
         example_value = delete_in_example(example_value, (pre_length, past_length)[k > 0])
 
@@ -1497,20 +1563,22 @@ i_last_example = 'future'
     
     
 def get_difference(old, new):
-    if old:
-        for i in range(len(new)):
-            if old[:1] == new[:1]:
-                old = old[1:]
-                new = new[1:]
-            else:
-                break
-        for i in range(len(new) - 1, -1, -1):
-            if old[-1:] == new[-1:]:
-                old = old[:-1]
-                new = new[:-1]
-            else:
-                break
-    return old
+    start = 0
+    # Находим, до какого момента строки абсолютно одинаковы с начала
+    while start < len(old) and start < len(new) and old[start] == new[start]:
+        start += 1
+        
+    end_old = len(old)
+    end_new = len(new)
+    # Находим, с какого момента они одинаковы с конца (не заходя за точку start)
+    while end_old > start and end_new > start and old[end_old - 1] == new[end_new - 1]:
+        end_old -= 1
+        end_new -= 1
+        
+    # Вырезаем то, что изменилось
+    deleted = old[start:end_old]
+    
+    return deleted
 
 
 def destroy_nearby_bracks(example, arg):
@@ -1540,6 +1608,35 @@ def insertion_if_division_of_one(left_symbol, arg, example, destroy_nearby_scope
         return (insert_in_example, destroy_nearby_bracks)[destroy_nearby_scopes](example, '!' if left_symbol in '0123456789φπevEထ)!' else 'φ')
     else:
         return (insert_in_example, destroy_nearby_bracks)[destroy_nearby_scopes](example, f'{'•' if left_symbol in '0123456789φπevEထ)!' and not re.search(r'div$', exampled_value(example)) else ''}{arg}')
+
+
+import ctypes
+
+def set_window_theme_border(window, is_dark_theme):
+    """
+    Принудительно делает системную рамку окна темной или светлой (Windows 10/11).
+    """
+    window.update() # Гарантируем, что Windows успела выдать окну ID
+    
+    # Получаем HWND (дескриптор окна)
+    try:
+        hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+    except:
+        return
+        
+    # Код атрибута DWMWA_USE_IMMERSIVE_DARK_MODE
+    DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+    
+    # Передаем 1 для темной темы, 0 — для светлой
+    value = ctypes.c_int(1 if is_dark_theme else 0)
+    
+    # Вызываем системную функцию DWM
+    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+        hwnd, 
+        DWMWA_USE_IMMERSIVE_DARK_MODE, 
+        ctypes.byref(value), 
+        ctypes.sizeof(value)
+    )
 
 
 def close_main_win_with_layout_switching(*key):
@@ -1640,7 +1737,7 @@ def manage_key_event(key, just_from_added_win=False):
             symbol_left_from_cursor()
         if keysym == 'BackSpace':
             for i in reunite(united_symbols):
-                if (i_got_pattern := re.search(fr'{i}\s*$', example_value[:cursor_index])):
+                if (i_got_pattern := re.search(fr'{i}\s*$', example_value[:cursor_index])) and not (re.search(fr'log\s*$', example_value[:cursor_index]) and re.match(fr'\s*by', example_value[cursor_index:])):
                     example_value = delete_in_example(example_value, -len(i_got_pattern[0]))
                     break
             else:
@@ -1648,7 +1745,7 @@ def manage_key_event(key, just_from_added_win=False):
                     delete_to_the(k=-1)
         elif keysym == 'Delete':
             for i in reunite(united_symbols):
-                if (i_got_pattern := re.match(fr'\s*{i}', example_value[cursor_index:])):
+                if (i_got_pattern := re.match(fr'\s*{i}', example_value[cursor_index:])) and not (re.search(fr'log\s*$', example_value[:cursor_index]) and re.match(fr'\s*by', example_value[cursor_index:])):
                     example_value = delete_in_example(example_value, len(i_got_pattern[0]))
                     break
             else:
@@ -1682,16 +1779,16 @@ def manage_key_event(key, just_from_added_win=False):
             if left_find:
                 cursor_index += len(left_find[0])
             else:
-                examped = f'({examped})'
+                examped = re.sub(r'^(\s*)(.*)(\s*)$', r'\1(\2)\3', examped)
                 for i in range(len(examped) - 1):
                     if examped[i + 1] == '|':
                         module_type = 'Uu'[examped[i] in '0123456789!)ueπφE' or bool(re.match(r'[+•/^!\)]|mod|div', examped[i + 2:]))]
                         examped = examped[:i + 1] + module_type + examped[i + 2:]
                         example_value = example_value.replace('|', module_type, 1)
-                examped = examped[1:-1]
+                examped = re.sub(r'^(\s*)\((.*)\)(\s*)$', r'\1\2\3', examped)
                 examped_brackets, left_examped_brackets, right_examped_brackets = (''.join([i for i in j.replace('log', '<').replace('by', '>') if i in '()Uu<>']) for j in (examped, examped[:cursor_index], examped[cursor_index:]))
 
-
+                insert_billion_flag = False
                 for j in range(len(a := [examped_brackets, left_examped_brackets, right_examped_brackets])):
                     while any([i in a[j] for i in ('()', 'Uu', '<>')]):
                         a[j] = a[j].replace('()', '').replace('Uu', '').replace('<>', '')
@@ -1700,7 +1797,6 @@ def manage_key_event(key, just_from_added_win=False):
                 insert_by = ')by' if examped_brackets[-2:] == '<(' else '|by' if examped_brackets[-2:] == '<U' else 'by'
                 if '<' not in examped_brackets:
                     if examped[:cursor_index][-1:] in (')', 'u'):
-                        print(0)
                         start_scope, end_scope = ('()', 'Uu')[examped[:cursor_index][-1:] != ')']
                         last_indx_of_part = len(example_value[:cursor_index])
                         for indx in range(last_indx_of_part - 1, -1, -1):
@@ -1712,18 +1808,26 @@ def manage_key_event(key, just_from_added_win=False):
                                 cursor_index += cursor_index_shift
                                 break
                     else:
-                        print(1)
                         if a := re.search(fr'{num_construct_with_spaces}\s*$', example_value[:cursor_index]):
-                            print(2)
                             cursor_index_shift = len(a[0])
                             example_value = insert_in_example(example_value, ')')
                             cursor_index -= (cursor_index_shift + 1)
                             example_value = insert_in_example(example_value, 'log(')
                             cursor_index += (cursor_index_shift + 1)
-                insert_by_addition = ('(' if right_examped_brackets[:1] == ')' and left_examped_brackets.replace('<', '').replace('U', '')[-1:] != '(' else '|'
-                                      if right_examped_brackets[:1] == 'u' and left_examped_brackets.replace('<', '').replace('(', '')[-1:] != 'U' else '')
+                        elif not re.search(fr'[.,\dφπeE)]$', exampled_value()[:cursor_index]):
+                            insert_billion_flag = True
+
+                scope_condition = right_examped_brackets.count(')') - left_examped_brackets.count('(') > 0
+                module_condition = right_examped_brackets.count('u') - left_examped_brackets.count('U') > 0
+                insert_by_addition = '(' if scope_condition else '|' if module_condition else ''
                 insert_by += insert_by_addition
-                example_value = insert_in_example(example_value.replace('U', '|').replace('u', '|'), insert_by)
+                example_value = example_value.replace('U', '|').replace('u', '|')
+                if insert_billion_flag:
+                    should_delete_mul_or_exp = bool(re.search(r'(?:(?:\d\s*)*(?:[.,]\s*))?(?:\d\s*)+[eE]\s*(?:-\s*)?(?:\d\s*)+(?:[.,]\s*)?(?:\d\s*)*', example_value[:cursor_index]))
+                    example_value = delete_in_example(example_value, -len(a := re.search(fr'{r'•?' * should_delete_mul_or_exp}\s*$', example_value[:cursor_index])[0]))
+                    example_value = insertion_if_division_of_one(symbol_left_from_cursor(), f'E9', example_value, without_one='•' in a)
+                else:
+                    example_value = insert_in_example(example_value, insert_by)
         elif keysym == 'dollar':
             pass  # Этот символ можно использовать для пустого нажатия, удалять запрещено!
         elif keysym in ('ampersand', 'greater', 'less', 'braceleft', 'braceright', 'underscore'):
@@ -1793,7 +1897,8 @@ def manage_key_event(key, just_from_added_win=False):
             example_value = insert_in_example(example_value, 'div')
         elif keysym == 'm':
             if not re.search(fr'[.,\dφπeE)]$', exampled_value()[:cursor_index]):
-                example_value = delete_in_example(example_value, -len(a := re.search(r'•?\s*$', example_value[:cursor_index])[0]))
+                should_delete_mul_or_exp = bool(re.search(r'(?:(?:\d\s*)*(?:[.,]\s*))?(?:\d\s*)+[eE]\s*(?:-\s*)?(?:\d\s*)+(?:[.,]\s*)?(?:\d\s*)*', example_value[:cursor_index]))
+                example_value = delete_in_example(example_value, -len(a := re.search(fr'{r'•?' * should_delete_mul_or_exp}\s*$', example_value[:cursor_index])[0]))
                 example_value = insertion_if_division_of_one(symbol_left_from_cursor(), f'E6', example_value, without_one='•' in a)
             else:
                 example_value = insert_in_example(example_value, 'mod')
@@ -1960,14 +2065,16 @@ def manage_key_event(key, just_from_added_win=False):
     difference2 = ''
     for i in range(-2, -len(recent_examples), -1):
         if ((len(recent_examples[i][0]) >= len(recent_examples[i - 1][0]) or
-             is_num(recent_examples[i][1], correct_answer_num_symbols) and not is_num(recent_examples[i - 1][1], correct_answer_num_symbols) or 
-             'q' in recent_examples[i - 1][0] and 'q' not in recent_examples[i][0]) 
+             re.search(r'[0-9φπe.]', recent_examples[i][0]) and not re.search(r'[0-9φπe.]', recent_examples[i - 1][0]) or
+             'q' in recent_examples[i - 1][0] and 'q' not in recent_examples[i][0])
              and not ('q' in recent_examples[i - 1][0] and 'q' in recent_examples[i][0])):
-            difference2 = ''.join([get_difference(old=recent_examples[-j][0], new=recent_examples[-j + 1][0]) for j in range(abs(i), 2, -1)])
+            list_differ = [get_difference(old=recent_examples[-j][0], new=recent_examples[-j + 1][0]) for j in range(abs(i), 2, -1)]
+            difference2 = ''.join((list_differ, reversed(list_differ))[keysym == 'BackSpace'])
             break
-    difference1 = difference2 + get_difference(old=recent_examples[-2][0], new=recent_examples[-1][0])
-    num_is_part_of_deleted = re.search(r'[0-9φπe]', difference1) and not re.search(r'[0-9φπe]', difference2)
-    
+    diff_2sub1 = get_difference(old=recent_examples[-2][0], new=recent_examples[-1][0])
+    difference1 = (difference2 + diff_2sub1, diff_2sub1 + difference2)[keysym == 'BackSpace']
+    num_is_part_of_deleted = re.search(r'[0-9φπe.]', difference1) and not re.search(r'[0-9φπe.]', difference2)
+
     if keysym in ('grave', 'Return', 'BackSpace', 'Delete', 'apostrophe', 'quotedbl') or keysym_char == 'ё' or num_is_part_of_deleted and is_num(recent_examples[-2][1], correct_answer_num_symbols):
         indexes_of_selection = None
         perfect_ex_for_ans = ''
@@ -1992,6 +2099,7 @@ def manage_key_event(key, just_from_added_win=False):
             rounding_in_history = f' ({manual_round_abs} знак{('ов', 'а', '')[num_of_ending_symbols]} {('перед', 'после')[ROUND_ANSWER_TO_MANUALLY > 0]} запятой)'
         
         temporary_data_and_rounding = split_old_history_of_calculations[2]
+
         if perfect_ex_for_ans and (perfect_ex_for_ans != split_old_history_of_calculations[0] or (rounding_in_history not in temporary_data_and_rounding or '(' in temporary_data_and_rounding and rounding_in_history == '')):
             history_input = perfect_ex_for_ans
             if is_num(history_res, correct_answer_num_symbols) and history_res != history_input.replace(' ', ''):
@@ -2008,7 +2116,7 @@ def manage_key_event(key, just_from_added_win=False):
                     recents['last examples'].append(value_to_add_plus)
                 if len(recents['last examples']) > 1000:
                     recents['last examples'].pop(0)
-                if len(recents['recent examples']) > 20:
+                if len(recents['recent examples']) > 100:
                     recents['recent examples'].pop(0)
                 
                 if history_input and added_win.title() in ('инструкция', 'история', invisible_win_title):
@@ -2055,7 +2163,7 @@ def manage_key_event(key, just_from_added_win=False):
                 recents['last examples'].append(value_to_add_plus)
             if len(recents['last examples']) > 1000:
                 recents['last examples'].pop(0)
-            if len(recents['recent examples']) > 20:
+            if len(recents['recent examples']) > 100:
                 recents['recent examples'].pop(0)
     
     last_keys.append(keysym)
@@ -2066,7 +2174,6 @@ def manage_key_event(key, just_from_added_win=False):
     
     change_width_of_entry(entry_box.get(), entry_box, result)
 
-    
     if keysym == 'Escape' or grave_destroy_win:
         close_main_win_with_layout_switching()
 
@@ -2117,7 +2224,7 @@ def save_example_to_history(*key):
                 recents['last examples'].append(value_to_add_plus)
             if len(recents['last examples']) > 1000:
                 recents['last examples'].pop(0)
-            if len(recents['recent examples']) > 20:
+            if len(recents['recent examples']) > 100:
                 recents['recent examples'].pop(0)
             if history_input and added_win.title() in ('инструкция', 'история', invisible_win_title):
                 return_rounding_to_future_state_while_making_i_last_example_future()
@@ -2197,7 +2304,7 @@ def insert_values_in_inputs(new_entry_box_value, new_result_value, date_time_rou
         recents['last examples'].append(value_to_add_plus)
     if len(recents['last examples']) > 1000:
         recents['last examples'].pop(0)
-    while len(recents['recent examples']) > 20:
+    while len(recents['recent examples']) > 100:
         recents['recent examples'].pop(0)
 
 
@@ -2840,9 +2947,9 @@ def paste_text(*key):
                     break
 
             replaced_paste = re.sub(r'log\(([^;()]*)(?:;|\)by\(|\)base\()([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', replaced_paste)
-            replaced_paste = re.sub(fr'log{num_construct_with_spaces}\(([^;()]*)\)', r'log&@@&@@#log(2;log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))\2@&&@&&by&@@&@@\1@&&@&&', replaced_paste) #log(log100(15+(log4(1/64)+log8(64))*(5+5))+log(69;r69);2)
+            replaced_paste = re.sub(fr'log{num_construct_with_spaces}\(([^;()]*)\)', r'log&@@&@@#log(2;log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))\2@&&@&&by&@@&@@\1@&&@&&', replaced_paste)
             replaced_paste = replaced_paste.replace('&@@&@@', '(').replace('@&&@&&', ')') #log(2;log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))
-            replaced_paste = replaced_paste.replace('base', 'by')
+            replaced_paste = replaced_paste.replace('base', 'by')  #log(log100(15+(log4(1/64)+log8(64))*(5+5))+log(69;r69);2)
 
             # replaced_paste = re.sub(r'(?<=[0-9φπeထ)!])E', '•10^', replaced_paste)
             # replaced_paste = re.sub(r'(?<=[^√])E', '1•10^', replaced_paste).replace('E', '•10^')
@@ -2883,18 +2990,14 @@ def change_text(pasted, start=None, end=None):
     
     
 def change_selection_colors_to_normal(theme_is_light):
-    entry_box.config(insertbackground=('#e0e0e0', '#1f1f1f')[theme_is_light])
-    result.config(insertbackground=entry_box.cget('insertbackground'))
-    entry_box.config(selectforeground=entry_box.cget('fg'), selectbackground=('#' + '50' * 3, '#' + 'ab' * 3)[theme_is_light])
-    result.config(selectforeground=entry_box.cget('fg'), selectbackground=entry_box.cget('selectbackground'))
+    entry_box.config(insertbackground=('#e0e0e0', '#1f1f1f')[theme_is_light], selectforeground=entry_box.cget('fg'), selectbackground=('#' + '50' * 3, '#' + 'ab' * 3)[theme_is_light])
+    result.config(insertbackground=entry_box.cget('insertbackground'), selectforeground=entry_box.cget('fg'), selectbackground=entry_box.cget('selectbackground'))
     
     
 def change_selection_colors_to_invisible():
     fg, bg = entry_box.cget('fg'), entry_box.cget('bg')
-    entry_box.config(insertbackground=bg)
-    result.config(insertbackground=bg)
-    entry_box.config(selectforeground=fg, selectbackground=bg)
-    result.config(selectforeground=fg, selectbackground=bg)
+    entry_box.config(insertbackground=bg, selectforeground=fg, selectbackground=bg)
+    result.config(insertbackground=bg, selectforeground=fg, selectbackground=bg)
     
     
 def saved_state_index(event):
@@ -2968,7 +3071,7 @@ def move_added_win(event):
     if x_coord > MAX_X_COORD:
         x_coord = MAX_X_COORD
     setting_x(x_coord)
-    added_win.geometry(f'{WIDTH + 8 * 2 + 1}x{MAX_COORD - 2 * TASKBAR_HEIGHT}+{x_coord}+0')
+    added_win.geometry(f'{added_win.winfo_width()}x{MAX_COORD - 2 * TASKBAR_HEIGHT}+{x_coord}+0')
     return 'break'
 
 
@@ -2984,7 +3087,8 @@ def move_added_win_scrolling_horizontally(event):
         x_coord -= (x_coord - (MIN_X_COORD - 8 * 2)) % delta_event  # чтобы окно истории встало точно над строкой со смещение в полоску
     x_coord_diff = x_coord - pre_x_coord
     setting_x(x_coord)
-    added_win.geometry(f'{WIDTH + 8 * 2 + 1}x{MAX_COORD - 2 * TASKBAR_HEIGHT}+{x_coord}+0')
+    
+    added_win.geometry(f'{added_win.winfo_width()}x{MAX_COORD - 2 * TASKBAR_HEIGHT}+{x_coord}+0')
     pyautogui.moveTo(event.x_root + x_coord_diff, event.y_root)
     
     
@@ -3100,6 +3204,7 @@ def ctrl_delete(key):
     (change_text('', cursor_index, define_future_of_cursor('right')) if not has_selection() else cut_text(key))
 
 def tab(key):
+    pyautogui.hotkey('Alt', 'Tab')
     return 'break'
     
 main_win.bind('<Shift-Up>', lambda key: set_cursor_shift_to_the_edge(key, 'start'))
@@ -3120,9 +3225,13 @@ main_win.bind('<Control-Shift-Y>', ctrl_shift_y)
 main_win.bind('<Control-Shift-Z>', ctrl_shift_z)
 main_win.bind('?', lambda key: create_added_win('?'))
 main_win.bind('<Control-slash>', lambda key: create_added_win('?'))
-main_win.bind('<Control-space>', lambda key: (pyautogui.hotkey('Alt', 'Tab'), time.sleep(0.1), pyautogui.press('Enter')))
-main_win.bind('<Alt-space>', lambda key: pyautogui.hotkey('Alt', 'Tab'))
-main_win.bind('<Tab>', lambda key: (tab(key), pyautogui.hotkey('Alt', 'Tab')))
+# main_win.bind('<Control-space>', lambda key: (pyautogui.hotkey('Alt', 'Tab'), time.sleep(0.1), pyautogui.press('Enter')))
+# main_win.bind('<Alt-space>', lambda key: pyautogui.hotkey('Alt', 'Tab'))
+# main_win.bind('<Tab>', lambda key: tab)
+
+main_win.bind('<Tab>', lambda key: switch_to_next_window())
+main_win.bind('<Alt-space>', lambda key: switch_to_next_window())
+main_win.bind('<Control-space>', lambda key: switch_to_next_window())
 
 main_win.bind('<Motion>', saved_state_index)
 main_win.bind('<Control-MouseWheel>', lambda key: change_text_size(increase=key.delta > 0))
@@ -3258,8 +3367,9 @@ def focus_in(event):
     result.config(bg=entry_box.cget('bg'))
     change_size_of_everything(scale=settings['scale'], scale_was_zero=True, change_result=False)
     config_fg_and_insertbackground()
-    main_win.after(50, blink_fake_cursor(None))
-    if added_win.title() == 'инструкция':
+    if added_win.focus_displayof() is not None:
+        main_win.after(50, blink_fake_cursor(None))
+    if added_win.title() == 'инструкция':   
         main_win.after(50, text_entry.yview(top_text_index))
         text_entry.mark_set(INSERT, current_text_index)
         if has_selection:
@@ -3274,15 +3384,20 @@ def focus_out(event):
     entry_box.config(bg=('#' + '1f' * 3, '#' + 'ea' * 3)[settings['theme'] == 'light'])
     result.config(bg=entry_box.cget('bg'))
     change_width_of_entry(entry_box.get(), entry_box, result)
-    blink_fake_cursor()
+    if added_win.focus_displayof() is not None:
+        blink_fake_cursor()
+
+
+def delete_temp_cursor(temp_cursor):
+    if entry_box.get()[entry_box.index("insert") - 1:entry_box.index("insert")] == temp_cursor:
+        entry_box.delete(entry_box.index("insert") - 1)
+    change_width_of_entry(entry_box.get(), entry_box, result)
 
 
 def blink_fake_cursor(state=True):
     temp_cursor = 'I'
     if state is None:
-        if entry_box.get()[entry_box.index("insert") - 1:entry_box.index("insert")] == temp_cursor:
-            entry_box.delete(entry_box.index("insert") - 1)
-        change_width_of_entry(entry_box.get(), entry_box, result)
+        main_win.after(350, lambda: delete_temp_cursor(temp_cursor))
         return
     if state and entry_box.get()[entry_box.index("insert") - 1:entry_box.index("insert")] != temp_cursor:
         entry_box.insert('insert', temp_cursor)
@@ -3433,6 +3548,7 @@ def change_theme(event):
         text_entry.tag_remove(SEL, '1.0', 'end')
         text_entry.tag_add(SEL, start_sel, end_sel)
 
+    if added_win.title() != invisible_win_title: set_window_theme_border(window=added_win, is_dark_theme=settings['theme'] == 'dark')
     if tape: resize_and_retheme_canvas_drawings()
         
         
@@ -3458,6 +3574,7 @@ def check_theme_or_geometry_change():
         if (settings['theme'] == 'dark') != current:
             set_focus_from_not_my_application()
             change_theme(None)
+            main_win.event_generate('<Control-space>')
             pyautogui.hotkey('ctrl', 'space')
     res_val, entry_val = result.get(), entry_box.get()
 
@@ -3470,7 +3587,7 @@ def check_theme_or_geometry_change():
         if recents['rounding info longer'] > 0:
             recents['rounding info longer'] -= 1
         if has_selection():
-            pyautogui.press('right' if cursor_index == get_selection()['start'] else 'left')
+            main_win.event_generate('<Right>' if cursor_index == get_selection()['start'] else '<Left>')
         if 'q' in entry_val and main_win.focus_get() == entry_box:
             pyautogui.hotkey('ctrl', 'backspace')
             main_win.after(20, unbind_left_button)

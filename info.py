@@ -166,6 +166,9 @@ class FakeWindow():
     def wm_state(self):
         return 'iconic'
 
+    def focus_displayof(self):
+        return
+
 
 def is_russian_layout() -> bool:
     """
