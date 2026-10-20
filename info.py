@@ -57,7 +57,7 @@ last_time_main_win_geometry_change = 0
 last_val_before_geometry_change = 'если это вставится, значение использовали до его определения !!!техническая ошибка разработчиков!!!'
 last_time_round_change = 0
 num_construct = r'((?:\d+[.,]?\d*|[.,]\d+)(?:[eE]-?\d*[.,]?\d*)?|[φπeE])'
-num_construct_with_spaces = r'((?:(\d\s*)+(?:[.,]\s*)?(?:\d\s*)*|(?:[.,]\s*)(?:\d\s*)+)(?:[eE]\s*(?:-\s*)?(?:\d\s*)*(?:[.,]\s*)?(?:\d\s*)*)?|[φπeE])'
+num_construct_with_spaces = r'((?:(?:\d\s*)+(?:[.,]\s*)?(?:\d\s*)*|(?:[.,]\s*)(?:\d\s*)+)(?:[eE]\s*(?:-\s*)?(?:\d\s*)*(?:[.,]\s*)?(?:\d\s*)*)?|[φπeE])'
 word_construct = '[а-яА-ЯЁё]+'
 tokenator = r'(d?(?:arc)?(?:sin|cos|c?tg)|d?arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\))'
 super_tokenator = r'(sin|cos|c?tg|arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\)|[\dφπeE.])'

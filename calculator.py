@@ -55,7 +55,8 @@ def switch_to_next_window():
     # Через 200 миллисекунд возвращаем калькулятор обратно. Он появится на том же месте, но фокус останется в чужом окне, а каретка там гарантированно активируется!
     main_win.after(150, lambda: main_win.deiconify())
     main_win.after(170, lambda: fake_main_win.destroy())
-    main_win.after(200, lambda: main_win.event_generate('<FocusOut>'))
+    if added_win.focus_displayof():
+        main_win.after(200, lambda: main_win.event_generate('<FocusOut>'))
 
     return 'break'
 
@@ -193,7 +194,7 @@ with open(f'{FILES}/settings.json', 'r') as settings_file:
 if recents['rounding info longer'] == 0:
     recents['rounding info longer'] = (time.time() - recents['closing time'][-1] > 28 * DAY) * 2
 
-if time.time() - recents['closing time'][-3] >= 14 * DAY:
+if time.time() - recents['closing time'][-2] >= 60 * DAY:
     subprocess.run(['python', 'animation.py'])
 
     
@@ -689,8 +690,8 @@ def solve_example(example=None, get_raw_ans=False):
     try:
         i_stop, i_start = 0, -1
         for i in range(1, len(example_for_calculations)):
-            if example_for_calculations[i - 1] in (')', 'u') and example_for_calculations[i] == '!':
-                example_for_calculations[i] = 'LowPriorFact'
+            if example_for_calculations[i - 1] in (')', 'u') and example_for_calculations[i] in ('!', 'k'):
+                example_for_calculations[i] = f'LowPrior"{example_for_calculations[i]}"'
         while '(' in example_for_calculations or 'U' in example_for_calculations:
             for i in range(len(example_for_calculations)):
                 if example_for_calculations[i] in ('(', 'U'):
@@ -699,7 +700,7 @@ def solve_example(example=None, get_raw_ans=False):
                     i_stop = i
                     break
             inner_example = example_for_calculations[i_start + 1:i_stop]
-            while any((element in inner_example for element in ('sin cos tg ctg ln lg e k ! log LowPriorFact'.split() + list(darc_generator)))):
+            while any((element in inner_example for element in ('sin cos tg ctg ln lg e k ! log LowPrior"!" LowPrior"k"'.split() + list(darc_generator)))):
                 for i in range(len(inner_example) - 3, -1, -1):
                     if not (inner_example[i + 1] == 'e' and is_num(inner_example[i]) and is_num(inner_example[i + 2])):
                         continue
@@ -746,8 +747,16 @@ def solve_example(example=None, get_raw_ans=False):
                         inner_example[i] = str(inner_example[i])
                         inner_example[i + 1] = 'R'
                 inner_example = [i for i in inner_example if i != 'R']
+                for i in range(len(inner_example) - 2):
+                    if not (inner_example[i + 1] == 'LowPrior"k"' and is_num(inner_example[i + 2])):
+                        continue
+                    inner_example[i:i + 3] = ['R', 'R', C.radical(num=inner_example[i + 2], power=inner_example[i])]
+                    if type(inner_example[i + 2]) is str:
+                        return inner_example[i + 2]
+                    inner_example[i + 2] = str(inner_example[i + 2])
+                inner_example = [i for i in inner_example if i != 'R']
                 for i in range(len(inner_example) - 1):
-                    if not (inner_example[i + 1] == 'LowPriorFact' and is_num(inner_example[i])):
+                    if not (inner_example[i + 1] == 'LowPrior"!"' and is_num(inner_example[i])):
                         continue
                     inner_example[i:i + 2] = ['R', C.factorial(num=inner_example[i])]
                     if type(inner_example[i + 1]) is str:
@@ -982,6 +991,12 @@ def scroll_text(string_shift):
     else:
         text_entry.yview((1.0, END)[string_shift > 0])
     text_entry['state'] = NORMAL
+
+
+def added_win_switch_to_string(event):
+    entry_box.focus_set()
+    beauty_letter_tape.wm_attributes('-topmost', 1)
+    return 'break'
     
     
 def added_win_control_keypress(event):
@@ -1000,9 +1015,6 @@ def added_win_control_keypress(event):
         key.widget = key_old.widget
         key.char = ''
         set_cursor_to_the(key, define_future_of_cursor(('left', 'right')[key_old.keysym == 'greater']))
-    elif keysym == 'space':
-        entry_box.focus_set()
-        beauty_letter_tape.wm_attributes('-topmost', 1)
     elif keysym == 'w':
         manage_not_main_window_close()
     elif keysym == 'a':
@@ -1104,6 +1116,12 @@ def create_added_win(win_type):
     text_entry.bind('<Control-Shift-Key>', added_win_control_keypress)
     added_win.bind('<Control-Key>', added_win_control_keypress)
     text_entry.bind('<Control-Key>', added_win_control_keypress)
+    added_win.bind('<Control-space>', added_win_switch_to_string)
+    text_entry.bind('<Control-space>', added_win_switch_to_string)
+    added_win.bind('<Alt-space>', added_win_switch_to_string)
+    text_entry.bind('<Alt-space>', added_win_switch_to_string)
+    added_win.bind('<Tab>', added_win_switch_to_string)
+    text_entry.bind('<Tab>', added_win_switch_to_string)
     
     added_win.bind('<Escape>', lambda key: manage_not_main_window_close())
     text_entry.bind('<Escape>', lambda key: manage_not_main_window_close())
@@ -1241,7 +1259,7 @@ def create_tape(tape_type='undo-redo', info_blit='', info_action=None):
         tape_info_label = Label(tape, text=info_blit, font=('Arial', HEIGHT // 2), fg=entry_box.cget('fg'), bg=entry_box.cget('bg'))
         tape_info_label.place(x=0, y=0)
         resize_and_retheme_canvas_drawings()
-        tape.bind('<ButtonPress-1>', lambda event: None if not (a := 'нажми меня, чтобы поменять местами аргументы логарифмов') in info_blit
+        tape.bind('<ButtonPress-1>', lambda event: None if not (a := 'нажми меня, если имелось ввиду это') in info_blit
                   else (entry_box.delete(0, END), entry_box.insert(END, info_blit.split(' – ')[0]), calculate_result(), pyautogui.moveTo(event.x_root, event.y_root + (-HEIGHT, HEIGHT)[settings['y'] - HEIGHT > 0]), destroy_tape()))
         tape.bind('<Motion>', set_tape_creation_time)
         tape.bind('<Shift-MouseWheel>', shift_info_for_more_comftable_reading)  # для удобного потягивания по тачпаду
@@ -1593,7 +1611,17 @@ def destroy_nearby_bracks(example, arg):
 def insertion_if_division_of_one(left_symbol, arg, example, destroy_nearby_scopes=False, without_one=False):
     division_after_1_condition = re.fullmatch(r'(?:[^0-9veE\.]|^\s*)1', exampled_value(example)[max(cursor_index - 2, 0):cursor_index])
     division_after_num_condition = re.search(r'(?<![ev])(?<![0-9.]e-)(?:\d+\.?\d*|\.\d+)/$', exampled_value(example)[:cursor_index])
-    if arg in ('E3', 'E6', 'E9', 'E12', 'E15', 'E18'):
+    const_to_pow_condition = re.search(fr'({re.escape(arg)}\s*\^\s*)(\(?\s*-?\s*)((?:\d\s*)+\s*\.?\s*(?:\d\s*)*\s*|\.\s*(?:\d\s*)+\s*)((?(1)\s*\)?\s*|))$', example[:cursor_index])
+    const_condition = re.search(fr'({re.escape(arg)}\s*)$', example[:cursor_index])
+    if re.search(r'[φπe]', arg) and const_to_pow_condition:
+        example = delete_in_example(example, -len(const_to_pow_condition[2]) - len(const_to_pow_condition[3]) - len(const_to_pow_condition[4]))
+        print(const_to_pow_condition[3].replace(' ', ''))
+        example = insert_in_example(example, const_to_pow_condition[2] + str(Decimal(const_to_pow_condition[3].replace(' ', '')) + 1) + const_to_pow_condition[4])
+        return example
+    elif re.search(r'[φπe]', arg) and const_condition:
+        example = insert_in_example(example, '^2')
+        return example
+    elif arg in ('E3', 'E6', 'E9', 'E12', 'E15', 'E18'):
         if division_after_1_condition and not without_one:
             example = delete_in_example(example, -len(re.search(r'(?:\S|^)\s*$', example[:cursor_index])[0]))
             return insert_in_example(example, f'1E-{arg[1:]}')
@@ -1670,7 +1698,7 @@ def manage_key_event(key, just_from_added_win=False):
         key.keysym = ('Left', 'Right')[key_old.keysym == 'greater']
         key.state = 0x40000
         key.keycode = (37, 39)[key_old.keysym == 'greater']
-        key.type = 2        # Число 2 означает KeyPress (нажатие)
+        key.type = 2  # Число 2 означает KeyPress (нажатие)
         key.x = key_old.x
         key.y = key_old.y
         key.widget = key_old.widget
@@ -1732,9 +1760,8 @@ def manage_key_event(key, just_from_added_win=False):
                     change_width_of_entry(entry_box.get(), entry_box, result)
                     bypass = True
     if not bypass:
-        if (symbol_left_from_cursor() == '.' and (len(keysym) == 1 and keysym in 'sctlngpefraodmxbivyujwkMBTQPEUJCF' or keysym in keys_after_dot)):
+        if (symbol_left_from_cursor() == '.' and (len(keysym) == 1 and keysym in 'sctlngpefraodmxbivyujwIkMBTQPEUJCF' or keysym in keys_after_dot)):
             example_value = insert_in_example(example_value, '5')
-            symbol_left_from_cursor()
         if keysym == 'BackSpace':
             for i in reunite(united_symbols):
                 if (i_got_pattern := re.search(fr'{i}\s*$', example_value[:cursor_index])) and not (re.search(fr'log\s*$', example_value[:cursor_index]) and re.match(fr'\s*by', example_value[cursor_index:])):
@@ -1771,7 +1798,7 @@ def manage_key_event(key, just_from_added_win=False):
             example_value = insert_in_example(example_value, 'h' if not example_value else '/2' if symbol_left_from_cursor() in '0123456789φπevEထ)!' else '1/2')
         elif keysym == 'space':
             example_value = insert_in_example(example_value, ' ')
-        elif keysym == 'i':
+        elif keysym == 'I':
             example_value = insert_in_example(example_value, 'ထ')
         elif keysym == 'b':
             examped = exampled_value()
@@ -1848,7 +1875,7 @@ def manage_key_event(key, just_from_added_win=False):
             original_cursor_color = entry_box.cget('insertbackground')
             entry_box.config(insertbackground=entry_box.cget('bg'))
             main_win.after(after_tick_symbol_time, lambda: entry_box.config(insertbackground=original_cursor_color))
-        elif len(keysym) == 1 and keysym in 'zkMBTQPEbUJ':
+        elif len(keysym) == 1 and keysym in 'izkMBTQPEbUJ':
             if keysym == 'J':
                 example_value = insert_in_example(example_value, '^5')
             elif keysym == 'U':
@@ -1876,7 +1903,7 @@ def manage_key_event(key, just_from_added_win=False):
             # elif re.search(r'(?<![ev])(?<![0-9.]e-)(?:\d+\.?\d*|\.\d+)/e$', exampled_value()[:cursor_index]):
             #     example_value = delete_in_example(example_value, -len(re.search(r'(?<=[0-9.])\s*/\s*e\s*$', example_value[:cursor_index])[0]))
             #     example_value = insert_in_example(example_value, f'e-{keysym}')
-            elif keysym == 'P':
+            elif keysym in ('P', 'i'):
                 # example_value = insert_in_example(example_value, f'{'/100' if symbol_left_from_cursor() in '0123456789φπeEထ)!' else '1/100'}')
                 example_value = insertion_if_division_of_one(symbol_left_from_cursor(), 'φ', example_value)
         elif keysym in ('period', 'comma'):
@@ -2014,6 +2041,8 @@ def manage_key_event(key, just_from_added_win=False):
                 example_value = insert_in_example(example_value, f'.{keysym}')
             elif symbol_left_from_cursor() in 'πφ)':
                 example_value = insert_in_example(example_value, f'/{keysym}')
+            elif re.search(fr'{num_construct}$', exampled_value()[:cursor_index]) and last_keys_not_having_keytype_changed[-1] in ('kMmBbTQ'):
+                example_value = insert_in_example(example_value, f'•{keysym}')
             elif re.search(fr'{num_construct}•e$', exampled_value()[:cursor_index]) and last_keys_not_having_keytype_changed[-2] not in ('x', 'asterisk') and not re.search(fr'[Ee]-?{num_construct}•e$', exampled_value()[:cursor_index]):
                 example_value = delete_in_example(example_value, -len(re.search(r'•\s*e\s*$', example_value[:cursor_index])[0]))
                 example_value = insert_in_example(example_value, f'e{keysym}')
@@ -2050,9 +2079,11 @@ def manage_key_event(key, just_from_added_win=False):
             else:
                 if (i_got_pattern := re.match(fr'\s*(?:\S|$)', example_value[cursor_index:])):
                     cursor_index += len(i_got_pattern[0])
+        elif keysym == 'asciitilde':
+            example_value = insert_in_example(example_value, 'q')
         elif keysym not in special_keys and len(keysym) == 1:
             example_value = insert_in_example(example_value, f'{keysym}')
-        if not (keysym.isdigit() or keysym in ('minus', 'BackSpace', 'Delete')) and ('q' in example_value and keysym != 'q' or example_value.count('q') ==  2):
+        if not (keysym.isdigit() or keysym in ('minus', 'BackSpace', 'Delete')) and ('q' in example_value and keysym not in ('q', 'asciitilde') or example_value.count('q') ==  2):
             example_value, _, _, cursor_index, indexes_of_selection, _ = recents['last examples'][-1]
         if keysym != 'apostrophe':
             entry_box.insert(END, example_value)
@@ -2074,6 +2105,9 @@ def manage_key_event(key, just_from_added_win=False):
     diff_2sub1 = get_difference(old=recent_examples[-2][0], new=recent_examples[-1][0])
     difference1 = (difference2 + diff_2sub1, diff_2sub1 + difference2)[keysym == 'BackSpace']
     num_is_part_of_deleted = re.search(r'[0-9φπe.]', difference1) and not re.search(r'[0-9φπe.]', difference2)
+    if added_win.title() == 'инструкция' and keysym_char:
+        text_entry.tag_config('highlight', background=text_entry.tag_cget('sel', 'background'))
+        highlight_all_words(text_entry, re.sub(r'[^\s0-9φπeа-яА-ЯЁё"\'«»“”()/•+a-zA-z-√|!^]', r'', example_value), 'highlight')
 
     if keysym in ('grave', 'Return', 'BackSpace', 'Delete', 'apostrophe', 'quotedbl') or keysym_char == 'ё' or num_is_part_of_deleted and is_num(recent_examples[-2][1], correct_answer_num_symbols):
         indexes_of_selection = None
@@ -2510,6 +2544,14 @@ def move_calculator_to_standard_positions():
 def move_up(key):
     setting_y(recents['mid'] if recents['mid'] < settings['y'] else recents['top'] if settings['y'] != recents['top'] else recents['low'])
     move_calculator_to_standard_positions()
+
+
+def move_to_edges(key):
+    if settings['y'] not in (recents['top'], recents['low']):
+        setting_y(recents[('top', 'low', ('top', 'low')[settings['y'] > recents['low'] // 2])[2 * (key.keysym == 'e') + (key.keysym == 'd')]])
+    else:
+        setting_y(recents[('top', 'low')[settings['y'] != recents['low']]])
+    move_calculator_to_standard_positions()
     
     
 def add_to_last_examples_if_selection_or_cursor_change():
@@ -2778,15 +2820,35 @@ def replace_paste_symbols(string):
     return string.replace('x', '•').replace('*', '•').replace('inf', 'ထ').replace('∞', 'ထ').replace('–', '-').replace('–', '-').replace('×', '•').replace('−', '-').replace('⋅', '•').replace('••', '^').replace(' ', ' ')
 
 
-def get_alternate_log_var(pasted_log_val):
-    while re.search(r'\(([^()]*)\)', pasted_log_val):
-        old_pasted_log_val = pasted_log_val
-        pasted_log_val = re.sub(r'log\(([^()]*)\)by\(([^()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', pasted_log_val)
-        pasted_log_val = re.sub(r'(?<!by)(?<!log)\(([^()]*)\)', r'&@@&@@\1@&&@&&', pasted_log_val)
-        if old_pasted_log_val == pasted_log_val:
-            return 'непарность скобок мешает втсавке логарифма! ' + pasted_log_val.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
+# def get_alternate_log_var(pasted_log_val):
+#     while re.search(r'\(([^()]*)\)', pasted_log_val):
+#         old_pasted_log_val = pasted_log_val
+#         pasted_log_val = re.sub(r'log\(([^()]*)\)by\(([^()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', pasted_log_val)
+#         pasted_log_val = re.sub(r'(?<!by)(?<!log)\(([^()]*)\)', r'&@@&@@\1@&&@&&', pasted_log_val)
+#         if old_pasted_log_val == pasted_log_val:
+#             return 'непарность скобок мешает вставке логарифма! ' + pasted_log_val.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
 
-    return pasted_log_val.replace('&@@&@@', '(').replace('@&&@&&', ')')
+#     return pasted_log_val.replace('&@@&@@', '(').replace('@&&@&&', ')')
+
+def modified_pasted_logarythm(log_string, alter=False):
+    func_construct = r'(?:\s*(?:(?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln+|lg+|√+|))'
+    func_construct_no_empt = r'(?:\s*(?:(?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)+|(?:(?<!mo)d(?!iv))?arc|(?:(?<!mo)d(?!iv))|ln+|lg+|√+))'
+    log_string = re.sub(fr'by({func_construct}\s*{num_construct_with_spaces}\s*(?:\s*!)*)', r'by(\1)', re.sub(r'log([^@&()][^()]*[^@&()])by', r'log(\1)by', log_string))
+
+    log_string = re.sub(r';', ')by(', log_string)
+    log_string = re.sub(fr'log({func_construct_no_empt})\(([^;()]*)\)', r'log(\1&@@&@@\2@&&@&&)', log_string)
+    log_string = re.sub(fr'(?:(?:by|base)({func_construct_no_empt})\()([^;()]*)\)', r'by(\1&@@&@@\2@&&@&&)', log_string)
+    log_string = re.sub(fr'log\(([^;()]*)(?:\)(?:by|base)\()([^;()]*)\)', (r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&')[alter], log_string) 
+    log_string = re.sub(r'&@@&@@(\s*)\((.*?)\)(\s*)@&&@&&', r'&@@&@@\1\2\3@&&@&&', log_string)
+    
+    log_string = re.sub(fr'log\s*{num_construct_with_spaces}\s*\(([^;()]*?)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', log_string)
+    a = re.finditer(fr'\([^();]*\)', log_string)
+    b = re.finditer(fr'(?:log(?:\s*{num_construct_with_spaces})?\s*\([^();]*\)|log\s*\(([^();]*)\)\s*by|by\s*\(([^();]*)\)\s*)', log_string)
+    for indx_i, i in enumerate(a):
+        if not any(i.start() >= j.start() and i.end() <= j.end() for j in b):
+            log_string = log_string[:i.start()] + f'<{log_string[i.start() + 1:i.end() - 1]}>' + log_string[i.end():]
+    log_string = log_string.replace('<', '&@@&@@').replace('>', '@&&@&&')
+    return log_string
 
 
 def paste_text(*key):
@@ -2829,17 +2891,6 @@ def paste_text(*key):
                 item2 = re.sub(r' {2,}', r' ', item2.replace('÷', '/').replace(':', '/').replace('//', 'div').replace('%', 'mod'))
                 item2 = re.sub(r' ?([^0-9\.]) ?', r'\1', item2)
 
-                while re.search(a := r'\(([^()]*)\)', item2):
-                    old_cycle_step_item2 = item2
-                    item2 = re.sub(r'log\(([^;()]*)(?:;|\)by\(|\)base\()([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', item2)
-                    item2 = re.sub(fr'log{num_construct}\(([^()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', item2)
-                    item2 = re.sub(r'(?<!by)(?<!log)\(([^()]*)\)', r'&@@&@@\1@&&@&&', item2)
-                    if old_cycle_step_item2 == item2:
-                        item2 = 'ошибка вставки! ' + item2.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
-                        break
-                item2 = item2.replace('&@@&@@', '(').replace('@&&@&&', ')')
-                item2 = item2.replace('base', 'by')
-
                 # item2 = re.sub(r'(?<=[0-9φπeထ)!])E', r'•10^', item2)
                 # item2 = re.sub(r'(?<=[^√])E', r'1•10^', item2).replace('E', '•10^')
                 
@@ -2849,11 +2900,28 @@ def paste_text(*key):
                 while re.search(mul_between_digits_and_constants := r'([0-9φπe\.\)])([φπe\(]|d(?!iv)|arc|sin|cos|c?tg|ln|lg|log)', item2):
                     item2 = re.sub(mul_between_digits_and_constants, r'\1•\2', item2)
                 item2 = re.sub(r'(\d)√', r'\1•√', item2)
-                i = item2.replace('#', '')
-                insert_in_example(example_value, '•10^' if symbol_left_from_cursor() in '0123456789φπeထ)!' else '1•10^' if symbol_left_from_cursor() in '^√' else '10^')
+                item2 = item2.replace('#', '')
 
-                if i == f'|{i[1:-1]}|':  # допустим максимум 2-й уровень вложенности, чтобы зрение читателя не запуталось, иначе обернётся в скобки, подсказывая ему, как правильно поступить
-                    value = f'({i})'
+                item2 = f'({item2})'
+                for j in range(len(replaced_paste) - 2): # i уже занято
+                    if item2[j + 1] == '|':
+                        item2  = item2[:j + 1] + 'Uu'[bool(re.search(r'[0123456789!)ueπφE]\s*$', value[j])) or bool(re.match(r'\s*(?:[+•:^!\)]|mod|div)', replaced_paste[j + 2:]))] + replaced_paste[j + 2:]
+                item2 = item2[1:-1]
+
+                item2 = item2.replace('U', '(U').replace('u', 'u)')
+                while re.search(a := r'\(([^()]*)\)', item2):
+                    old_cycle_step_item2 = item2
+                    item2 = modified_pasted_logarythm(item2)
+                    if old_cycle_step_item2 == item2:
+                        item2 = 'ошибка вставки! ' + item2.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
+                        break
+                item2 = modified_pasted_logarythm(item2)
+                item2 = item2.replace('&@@&@@', '(').replace('@&&@&&', ')')
+                item2 = item2.replace('base', 'by')
+                item2 = item2.replace('(U', '|').replace('u)', '|')
+
+                if item2 == f'|{i[1:-1]}|':  # допустим максимум 2-й уровень вложенности, чтобы зрение читателя не запуталось, иначе обернётся в скобки, подсказывая ему, как правильно поступить
+                    value = f'({item2})'
                     for j in range(len(value) - 2): # i уже занято
                         if value[j + 1] == '|':
                             value = value[:j + 1] + 'Uu'[value[j] in '0123456789!)ueπφE' or bool(re.match(r'[+•:^!\)]|mod|div', value[j + 2:]))] + value[j + 2:]
@@ -2893,7 +2961,7 @@ def paste_text(*key):
                 if len(copied_res) > 1:
                     copied_res[1] = copied_res[1].replace('(', '').replace(')', '')
 
-                print(copied_res[0])
+                # print(copied_res[0])
                 if 0 < abs(float(copied_res[0])) < 1 and len(copied_res) == 1:
                     copied_res[0] = re.search(r'-?\d*\.0*\d{,3}', copied_res[0])[0]
                     if re.search(r'-?\d*\.0*[1-9]\d[1-9]', copied_res[0]):
@@ -2937,23 +3005,9 @@ def paste_text(*key):
             replaced_paste = re.sub(r' {2,}', r' ', replaced_paste.replace('÷', '/').replace(':', '/').replace('//', 'div').replace('%', 'mod'))
             replaced_paste = re.sub(r' ?([^0-9\.]) ?', r'\1', replaced_paste)
 
-            while re.search(a := r'\(([^()]*)\)', replaced_paste):
-                old_cycle_step_replaced_paste = replaced_paste
-                replaced_paste = re.sub(r'log\(([^;()]*)(?:;|\)by\(|\)base\()([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', replaced_paste)
-                replaced_paste = re.sub(fr'log{num_construct_with_spaces}\s*\(([^;()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', replaced_paste)
-                replaced_paste = re.sub(r'(?<!by)(?<!log)\(([^();]*)\)', r'&@@&@@\1@&&@&&', replaced_paste)
-                if old_cycle_step_replaced_paste == replaced_paste:
-                    replaced_paste = 'ошибка вставки! ' + replaced_paste.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
-                    break
-
-            replaced_paste = re.sub(r'log\(([^;()]*)(?:;|\)by\(|\)base\()([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', replaced_paste)
-            replaced_paste = re.sub(fr'log{num_construct_with_spaces}\(([^;()]*)\)', r'log&@@&@@#log(2;log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))\2@&&@&&by&@@&@@\1@&&@&&', replaced_paste)
-            replaced_paste = replaced_paste.replace('&@@&@@', '(').replace('@&&@&&', ')') #log(2;log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))
-            replaced_paste = replaced_paste.replace('base', 'by')  #log(log100(15+(log4(1/64)+log8(64))*(5+5))+log(69;r69);2)
-
             # replaced_paste = re.sub(r'(?<=[0-9φπeထ)!])E', '•10^', replaced_paste)
             # replaced_paste = re.sub(r'(?<=[^√])E', '1•10^', replaced_paste).replace('E', '•10^')
-            replaced_paste = re.sub(r'((?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln|lg|log)(\d+\.?\d*|\.\d+)(\()', r'\1#\2#\3', replaced_paste)
+            replaced_paste = re.sub(fr'((?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln|lg|log){num_construct}(\()', r'\1#\2#\3', replaced_paste)
             while re.search(mul_between_digits_and_constants := r'([φπe\)])([0-9φπe\.\(])', replaced_paste):
                 replaced_paste = re.sub(mul_between_digits_and_constants, r'\1•\2', replaced_paste)
             while re.search(mul_between_digits_and_constants := r'([0-9φπe\.\)])([φπe\(]|d(?!i)|arc|sin|cos|c?tg|ln|lg|log)', replaced_paste):
@@ -2962,11 +3016,39 @@ def paste_text(*key):
             replaced_paste = re.sub(r'(\d)√', r'\1•√', replaced_paste)
             replaced_paste = replaced_paste.replace('#', '')
 
+            replaced_paste = f'({replaced_paste})'
+            for j in range(len(replaced_paste) - 2): # i уже занято
+                if replaced_paste[j + 1] == '|':
+                    replaced_paste = replaced_paste[:j + 1] + 'Uu'[bool(re.search(r'[0123456789!)ueπφE]\s*$', replaced_paste[j])) or bool(re.match(r'\s*(?:[+•:^!\)]|mod|div)', replaced_paste[j + 2:]))] + replaced_paste[j + 2:]
+            replaced_paste = replaced_paste[1:-1]
+
+            replaced_paste = replaced_paste.replace('U', '(U').replace('u', 'u)')
+            replaced_paste = [replaced_paste for _ in range(2)]
+            
+            for i in range(2):
+                while re.search(a := r'\(([^()]*)\)', replaced_paste[i]):
+                    old_cycle_step_replaced_paste = replaced_paste[i]
+                    replaced_paste[i] = modified_pasted_logarythm(replaced_paste[i], alter=i)
+                    if old_cycle_step_replaced_paste == replaced_paste[i]:
+                        replaced_paste[i] = 'ошибка вставки! ' + replaced_paste[i].replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
+                        break
+                else:
+                    replaced_paste[i] = modified_pasted_logarythm(replaced_paste[i], alter=i)
+                    replaced_paste[i] = replaced_paste[i].replace('&@@&@@', '(').replace('@&&@&&', ')') # log(2+log(25)by(5);log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))
+                    replaced_paste[i] = replaced_paste[i].replace('base', 'by')  # log(log100(15+(log4(1/64)+log8(64))*(5+5))+log(69;r69);2+log(5)by(25))
+                replaced_paste[i] = replaced_paste[i].replace('(U', '|').replace('u)', '|')
+    alter_replaced_paste = replaced_paste
+    if type(replaced_paste) is list:
+        replaced_paste, alter_replaced_paste = replaced_paste
+
     if not re.search(r'[а-яА-ЯЁё]', replaced_paste):
         replaced_paste = replace_paste_symbols(replaced_paste)
-    if 'log' in replaced_paste:
-        create_tape('info', example_value + get_alternate_log_var(replaced_paste) + ' – нажми меня, чтобы поменять местами аргументы логарифмов')
+    if not re.search(r'[а-яА-ЯЁё]', alter_replaced_paste):
+        alter_replaced_paste = replace_paste_symbols(alter_replaced_paste)
+
     change_text(replaced_paste)
+    if 'log' in replaced_paste and alter_replaced_paste != replaced_paste:
+        create_tape('info', alter_replaced_paste + ' – нажми меня, если имелось ввиду это')
     return 'break'
 
     
@@ -2987,6 +3069,7 @@ def change_text(pasted, start=None, end=None):
     example_value = re.sub(r'(?<![\d.)])\s*E', 'e', example_value)
     example_value = re.sub(r'(?<=[\d.)])\s*e|e\s*(?=[\d.(])', 'E', example_value)
     add_to_last_examples_if_selection_or_cursor_change()
+    return start, end
     
     
 def change_selection_colors_to_normal(theme_is_light):
@@ -3123,6 +3206,48 @@ def get_coeff_of_token_overlaying(tokened_query, tokened_data):
     return coeff
 
 
+def highlight_all_words(text_widget, word_to_find, tag_name="highlight"):
+    # 1. Сначала очищаем старые выделения этого тега (если они были)
+    text_widget.tag_remove(tag_name, "1.0", "end")
+    
+    # Если строка поиска пустая, ничего не делаем
+    if not word_to_find:
+        return
+
+    start_pos = "1.0"
+    
+    # 2. Запускаем цикл поиска совпадений
+    while True:
+        # Ищем слово от текущей позиции start_pos до конца текста ('end')
+        pos = text_widget.search(word_to_find, start_pos, stopindex="end", nocase=True)
+        
+        # Если совпадений больше нет, search() вернет пустую строку — выходим из цикла
+        if not pos:
+            break
+            
+        # Вычисляем конечную позицию (индекс начала + длина искомого слова)
+        # Формат строки "+Xc" означает "+X символов"
+        end_pos = f"{pos}+{len(word_to_find)}c"
+        
+        # 3. Добавляем тег к найденному участку
+        text_widget.tag_add(tag_name, pos, end_pos)
+        
+        # Сдвигаем позицию старта для следующей итерации цикла за найденное слово
+        start_pos = end_pos
+
+    ranges = text_widget.tag_ranges("highlight")
+
+    if ranges:
+        # Переводим Tcl_Obj первого совпадения в обычную строку Python
+        first_match_str = str(ranges[0])
+        
+        # Достаем номер строки
+        line_number = first_match_str.split('.')[0]
+        
+        # Прокручиваем к самому верху
+        text_widget.yview(int(line_number) - 1)
+
+
 def rank_text(key=None):
     itogo_matches_power_sums = []
     create_added_win('h')
@@ -3182,7 +3307,11 @@ def rank_text(key=None):
 
 
 for val, func in {'a': select_all, 'c': copy_text, 'x': cut_text, 'v': paste_text, 'y': ctrl_y, 'z': ctrl_z,
-                  's': save_example_to_history, 'w': close_main_win_with_layout_switching, 'h': (lambda key: create_added_win('h')), 'f': rank_text}.items():
+                  's': save_example_to_history, 'w': close_main_win_with_layout_switching,
+                  'h': lambda key: create_added_win('h'), 'f': rank_text, **{i: (lambda key: main_win.event_generate('<question>')) for i in ('q', 'i')},
+                  'l': lambda key: change_size_of_everything(1), 'm': lambda key: change_size_of_everything(3), 'b': lambda key: change_size_of_everything(5),
+                  **{i: move_to_edges for i in 'eud'}}.items():
+    
     for key in (val, val.upper()):
         main_win.bind(f'<Control-{key}>', func)
 
@@ -3229,7 +3358,18 @@ main_win.bind('<Control-slash>', lambda key: create_added_win('?'))
 # main_win.bind('<Alt-space>', lambda key: pyautogui.hotkey('Alt', 'Tab'))
 # main_win.bind('<Tab>', lambda key: tab)
 
+
+def press_tape_by_keyboard(key):
+    if tape and int(tape_canvas.cget('width')) == 0 and 'нажми меня' in tape_info_label.cget('text'):
+        pyautogui.moveTo(key.x_root, settings['y'] + HEIGHT // 2 + (HEIGHT, -HEIGHT)[settings['y'] - HEIGHT > 0])
+        pyautogui.click()
+        main_win.after(50, lambda: pyautogui.moveTo(key.x_root, key.y_root))
+    return 'break'
+
+
 main_win.bind('<Tab>', lambda key: switch_to_next_window())
+main_win.bind('<Shift-Tab>', press_tape_by_keyboard)
+main_win.bind('<Control-Tab>', press_tape_by_keyboard)
 main_win.bind('<Alt-space>', lambda key: switch_to_next_window())
 main_win.bind('<Control-space>', lambda key: switch_to_next_window())
 
@@ -3579,7 +3719,11 @@ def check_theme_or_geometry_change():
     res_val, entry_val = result.get(), entry_box.get()
 
     curr_time = time.time()
-
+    if tape:
+        widget_under_mouse = tape.winfo_containing(tape.winfo_pointerx(), tape.winfo_pointery())
+        if widget_under_mouse and widget_under_mouse.winfo_toplevel() == tape:
+            tape_creation_time = time.time()
+        
     if curr_time - last_time_main_win_geometry_change > 1 and re.search(calc_geometry_state_change_expression, res_val):
         result.delete(0, END)
         result.insert(END, val_before_last_main_win_geometry_change)
@@ -3592,8 +3736,9 @@ def check_theme_or_geometry_change():
             pyautogui.hotkey('ctrl', 'backspace')
             main_win.after(20, unbind_left_button)
             example_value = entry_box.get()
-    elif curr_time - tape_creation_time > (1.5, 10)[bool(tape) and int(tape_canvas.cget('width')) == 0 and 'нажми меня, чтобы поменять местами аргументы логарифмов' in tape_info_label.cget('text')]:
+    elif curr_time - tape_creation_time > (1.5, 5)[bool(tape) and int(tape_canvas.cget('width')) == 0 and 'нажми меня, если имелось ввиду это' in tape_info_label.cget('text')]:
         destroy_tape()
+
     main_win.after(50, check_theme_or_geometry_change)  # проверять каждую двадцатую секунды
 last_theme = is_dark_theme()
 check_theme_or_geometry_change()
