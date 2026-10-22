@@ -17,7 +17,8 @@ import subprocess
 from maths import *
 from info import *
 pyautogui.PAUSE = 0
-import runpy
+
+# Пример подключения внизу calculator.py (перед main_win.mainloop()):
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 GetWindowThreadProcessId = user32.GetWindowThreadProcessId
@@ -1161,7 +1162,7 @@ def finish_to_help_win():
         val = splitted_text_entry[i] + '\n'
         weight = ('normal', 'bold')[i in tag_rows]
         val = ('', '✓', 4 * ' ')[(weight == 'bold') + (i == tag_rows[1])] + val
-        color = ((black,) * 4 + (blue, green, gray) + (red,) * 3)[sum([i >= el for el in tag_rows])]
+        color = ((black,) * 4 + (blue, green, gray) + (red,) * 4)[sum([i >= el for el in tag_rows])]
         text_entry.insert(END, val, f'help_{color}_{weight}')
 
     change_help_geometry()
@@ -2820,35 +2821,54 @@ def replace_paste_symbols(string):
     return string.replace('x', '•').replace('*', '•').replace('inf', 'ထ').replace('∞', 'ထ').replace('–', '-').replace('–', '-').replace('×', '•').replace('−', '-').replace('⋅', '•').replace('••', '^').replace(' ', ' ')
 
 
-# def get_alternate_log_var(pasted_log_val):
-#     while re.search(r'\(([^()]*)\)', pasted_log_val):
-#         old_pasted_log_val = pasted_log_val
-#         pasted_log_val = re.sub(r'log\(([^()]*)\)by\(([^()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', pasted_log_val)
-#         pasted_log_val = re.sub(r'(?<!by)(?<!log)\(([^()]*)\)', r'&@@&@@\1@&&@&&', pasted_log_val)
-#         if old_pasted_log_val == pasted_log_val:
-#             return 'непарность скобок мешает вставке логарифма! ' + pasted_log_val.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
+def get_alternate_log_var(pasted_log_val):
+    while re.search(r'\(([^()]*)\)', pasted_log_val):
+        old_pasted_log_val = pasted_log_val
+        pasted_log_val = re.sub(r'log\(([^()]*)\)by\(([^()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', pasted_log_val)
+        pasted_log_val = re.sub(r'(?<!by)(?<!log)\(([^()]*)\)', r'&@@&@@\1@&&@&&', pasted_log_val)
+        if old_pasted_log_val == pasted_log_val:
+            return 'непарность скобок мешает вставке логарифма! ' + pasted_log_val.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
 
-#     return pasted_log_val.replace('&@@&@@', '(').replace('@&&@&&', ')')
+    return pasted_log_val.replace('&@@&@@', '(').replace('@&&@&&', ')')
 
-def modified_pasted_logarythm(log_string, alter=False):
-    func_construct = r'(?:\s*(?:(?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln+|lg+|√+|))'
-    func_construct_no_empt = r'(?:\s*(?:(?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)+|(?:(?<!mo)d(?!iv))?arc|(?:(?<!mo)d(?!iv))|ln+|lg+|√+))'
-    log_string = re.sub(fr'by({func_construct}\s*{num_construct_with_spaces}\s*(?:\s*!)*)', r'by(\1)', re.sub(r'log([^@&()][^()]*[^@&()])by', r'log(\1)by', log_string))
+# def modified_pasted_logarythm(log_string, alter=False):  # недоработана и бесит багами
+#     func_construct = r'(?:\s*(?:(?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln+|lg+|√+|))'
+#     func_construct_no_empt = r'(?:\s*(?:(?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)+|(?:(?<!mo)d(?!iv))?arc|(?:(?<!mo)d(?!iv))|ln+|lg+|√+))'
 
-    log_string = re.sub(r';', ')by(', log_string)
-    log_string = re.sub(fr'log({func_construct_no_empt})\(([^;()]*)\)', r'log(\1&@@&@@\2@&&@&&)', log_string)
-    log_string = re.sub(fr'(?:(?:by|base)({func_construct_no_empt})\()([^;()]*)\)', r'by(\1&@@&@@\2@&&@&&)', log_string)
-    log_string = re.sub(fr'log\(([^;()]*)(?:\)(?:by|base)\()([^;()]*)\)', (r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&')[alter], log_string) 
-    log_string = re.sub(r'&@@&@@(\s*)\((.*?)\)(\s*)@&&@&&', r'&@@&@@\1\2\3@&&@&&', log_string)
+#     log_string = re.sub(r';', r')by(', log_string)
+#     old_log_string = None
+#     while old_log_string != log_string:
+#         scope_not_ended_flag = False
+#         old_log_string = log_string
+#         for i in range(len(log_string)):
+#             if a := re.search(r'log(.*)by$', log_string[:i]):
+#                 if not re.search(r'[()]', a[1]):
+#                     break
+#                 scope_cnt = 0
+#                 for indx, j in enumerate(a[1]):
+#                     if j in '()':
+#                         scope_cnt += (-1, 1)[j == '(']
+#                     if scope_cnt == 0 and re.search(r'\S', a[1][indx + 1:]) and re.search(r'[()]', a[1][:indx + 1]) or not re.search(r'\s*\(', a[1][:indx + 1]):
+#                         log_string = re.sub(fr'log({re.escape(a[1])})by', r'log(\1)by', log_string)
+#                         scope_not_ended_flag = True
+#                         break
+#             if scope_not_ended_flag:
+#                 break
+
+#     log_string = re.sub(r';', ')by(', log_string)
+#     log_string = re.sub(fr'log({func_construct_no_empt})\(([^;()]*)\)', r'log(\1&@@&@@\2@&&@&&)', log_string)
+#     log_string = re.sub(fr'(?:(?:by|base)({func_construct_no_empt})\()([^;()]*)\)', r'by(\1&@@&@@\2@&&@&&)', log_string)
+#     log_string = re.sub(fr'log\(([^;()]*)(?:\)(?:by|base)\()([^;()]*)\)', (r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&')[alter], log_string) 
+#     log_string = re.sub(r'&@@&@@(\s*)\((.*?)\)(\s*)@&&@&&', r'&@@&@@\1\2\3@&&@&&', log_string)
     
-    log_string = re.sub(fr'log\s*{num_construct_with_spaces}\s*\(([^;()]*?)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', log_string)
-    a = re.finditer(fr'\([^();]*\)', log_string)
-    b = re.finditer(fr'(?:log(?:\s*{num_construct_with_spaces})?\s*\([^();]*\)|log\s*\(([^();]*)\)\s*by|by\s*\(([^();]*)\)\s*)', log_string)
-    for indx_i, i in enumerate(a):
-        if not any(i.start() >= j.start() and i.end() <= j.end() for j in b):
-            log_string = log_string[:i.start()] + f'<{log_string[i.start() + 1:i.end() - 1]}>' + log_string[i.end():]
-    log_string = log_string.replace('<', '&@@&@@').replace('>', '@&&@&&')
-    return log_string
+#     log_string = re.sub(fr'log\s*{num_construct_with_spaces}\s*\(([^;()]*?)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', log_string)
+#     a = re.finditer(fr'\([^();]*\)', log_string)
+#     b = re.finditer(fr'(?:log(?:\s*{num_construct_with_spaces})?\s*\([^();]*\)|log\s*\(([^();]*)\)\s*by|by\s*\(([^();]*)\)\s*)', log_string)
+#     for indx_i, i in enumerate(a):
+#         if not any(i.start() >= j.start() and i.end() <= j.end() for j in b):
+#             log_string = log_string[:i.start()] + f'<{log_string[i.start() + 1:i.end() - 1]}>' + log_string[i.end():]
+#     log_string = log_string.replace('<', '&@@&@@').replace('>', '@&&@&&')
+#     return log_string
 
 
 def paste_text(*key):
@@ -2891,6 +2911,17 @@ def paste_text(*key):
                 item2 = re.sub(r' {2,}', r' ', item2.replace('÷', '/').replace(':', '/').replace('//', 'div').replace('%', 'mod'))
                 item2 = re.sub(r' ?([^0-9\.]) ?', r'\1', item2)
 
+                while re.search(a := r'\(([^()]*)\)', item2):
+                    old_cycle_step_item2 = item2
+                    item2 = re.sub(r'log\(([^;()]*)(?:;|\)by\(|\)base\()([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', item2)
+                    item2 = re.sub(fr'log{num_construct}\(([^()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', item2)
+                    item2 = re.sub(r'(?<!by)(?<!log)\(([^()]*)\)', r'&@@&@@\1@&&@&&', item2)
+                    if old_cycle_step_item2 == item2:
+                        item2 = 'ошибка вставки! ' + item2.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
+                        break
+                item2 = item2.replace('&@@&@@', '(').replace('@&&@&&', ')') # log(2+log(25)by(5);log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))
+                item2 = item2.replace('base', 'by')  # log(log100(15+(log4(1/64)+log8(64))*(5+5))+log(69;r69);2+log(5)by(25))
+
                 # item2 = re.sub(r'(?<=[0-9φπeထ)!])E', r'•10^', item2)
                 # item2 = re.sub(r'(?<=[^√])E', r'1•10^', item2).replace('E', '•10^')
                 
@@ -2900,28 +2931,11 @@ def paste_text(*key):
                 while re.search(mul_between_digits_and_constants := r'([0-9φπe\.\)])([φπe\(]|d(?!iv)|arc|sin|cos|c?tg|ln|lg|log)', item2):
                     item2 = re.sub(mul_between_digits_and_constants, r'\1•\2', item2)
                 item2 = re.sub(r'(\d)√', r'\1•√', item2)
-                item2 = item2.replace('#', '')
+                i = item2.replace('#', '')
+                insert_in_example(example_value, '•10^' if symbol_left_from_cursor() in '0123456789φπeထ)!' else '1•10^' if symbol_left_from_cursor() in '^√' else '10^')
 
-                item2 = f'({item2})'
-                for j in range(len(replaced_paste) - 2): # i уже занято
-                    if item2[j + 1] == '|':
-                        item2  = item2[:j + 1] + 'Uu'[bool(re.search(r'[0123456789!)ueπφE]\s*$', value[j])) or bool(re.match(r'\s*(?:[+•:^!\)]|mod|div)', replaced_paste[j + 2:]))] + replaced_paste[j + 2:]
-                item2 = item2[1:-1]
-
-                item2 = item2.replace('U', '(U').replace('u', 'u)')
-                while re.search(a := r'\(([^()]*)\)', item2):
-                    old_cycle_step_item2 = item2
-                    item2 = modified_pasted_logarythm(item2)
-                    if old_cycle_step_item2 == item2:
-                        item2 = 'ошибка вставки! ' + item2.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
-                        break
-                item2 = modified_pasted_logarythm(item2)
-                item2 = item2.replace('&@@&@@', '(').replace('@&&@&&', ')')
-                item2 = item2.replace('base', 'by')
-                item2 = item2.replace('(U', '|').replace('u)', '|')
-
-                if item2 == f'|{i[1:-1]}|':  # допустим максимум 2-й уровень вложенности, чтобы зрение читателя не запуталось, иначе обернётся в скобки, подсказывая ему, как правильно поступить
-                    value = f'({item2})'
+                if i == f'|{i[1:-1]}|':  # допустим максимум 2-й уровень вложенности, чтобы зрение читателя не запуталось, иначе обернётся в скобки, подсказывая ему, как правильно поступить
+                    value = f'({i})'
                     for j in range(len(value) - 2): # i уже занято
                         if value[j + 1] == '|':
                             value = value[:j + 1] + 'Uu'[value[j] in '0123456789!)ueπφE' or bool(re.match(r'[+•:^!\)]|mod|div', value[j + 2:]))] + value[j + 2:]
@@ -2961,7 +2975,7 @@ def paste_text(*key):
                 if len(copied_res) > 1:
                     copied_res[1] = copied_res[1].replace('(', '').replace(')', '')
 
-                # print(copied_res[0])
+                print(copied_res[0])
                 if 0 < abs(float(copied_res[0])) < 1 and len(copied_res) == 1:
                     copied_res[0] = re.search(r'-?\d*\.0*\d{,3}', copied_res[0])[0]
                     if re.search(r'-?\d*\.0*[1-9]\d[1-9]', copied_res[0]):
@@ -3005,9 +3019,23 @@ def paste_text(*key):
             replaced_paste = re.sub(r' {2,}', r' ', replaced_paste.replace('÷', '/').replace(':', '/').replace('//', 'div').replace('%', 'mod'))
             replaced_paste = re.sub(r' ?([^0-9\.]) ?', r'\1', replaced_paste)
 
+            while re.search(a := r'\(([^()]*)\)', replaced_paste):
+                old_cycle_step_replaced_paste = replaced_paste
+                replaced_paste = re.sub(r'log\(([^;()]*)(?:;|\)by\(|\)base\()([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', replaced_paste)
+                replaced_paste = re.sub(fr'log{num_construct_with_spaces}\s*\(([^;()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', replaced_paste)
+                replaced_paste = re.sub(r'(?<!by)(?<!log)\(([^();]*)\)', r'&@@&@@\1@&&@&&', replaced_paste)
+                if old_cycle_step_replaced_paste == replaced_paste:
+                    replaced_paste = 'ошибка вставки! ' + replaced_paste.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
+                    break
+
+            replaced_paste = re.sub(r'log\(([^;()]*)(?:;|\)by\(|\)base\()([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', replaced_paste)
+            replaced_paste = re.sub(fr'log{num_construct_with_spaces}\(([^;()]*)\)', r'log&@@&@@#log(2;log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))\2@&&@&&by&@@&@@\1@&&@&&', replaced_paste) #log(log100(15+(log4(1/64)+log8(64))*(5+5))+log(69;r69);2)
+            replaced_paste = replaced_paste.replace('&@@&@@', '(').replace('@&&@&&', ')') #log(2;log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))
+            replaced_paste = replaced_paste.replace('base', 'by')
+
             # replaced_paste = re.sub(r'(?<=[0-9φπeထ)!])E', '•10^', replaced_paste)
             # replaced_paste = re.sub(r'(?<=[^√])E', '1•10^', replaced_paste).replace('E', '•10^')
-            replaced_paste = re.sub(fr'((?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln|lg|log){num_construct}(\()', r'\1#\2#\3', replaced_paste)
+            replaced_paste = re.sub(r'((?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln|lg|log)(\d+\.?\d*|\.\d+)(\()', r'\1#\2#\3', replaced_paste)
             while re.search(mul_between_digits_and_constants := r'([φπe\)])([0-9φπe\.\(])', replaced_paste):
                 replaced_paste = re.sub(mul_between_digits_and_constants, r'\1•\2', replaced_paste)
             while re.search(mul_between_digits_and_constants := r'([0-9φπe\.\)])([φπe\(]|d(?!i)|arc|sin|cos|c?tg|ln|lg|log)', replaced_paste):
@@ -3016,39 +3044,11 @@ def paste_text(*key):
             replaced_paste = re.sub(r'(\d)√', r'\1•√', replaced_paste)
             replaced_paste = replaced_paste.replace('#', '')
 
-            replaced_paste = f'({replaced_paste})'
-            for j in range(len(replaced_paste) - 2): # i уже занято
-                if replaced_paste[j + 1] == '|':
-                    replaced_paste = replaced_paste[:j + 1] + 'Uu'[bool(re.search(r'[0123456789!)ueπφE]\s*$', replaced_paste[j])) or bool(re.match(r'\s*(?:[+•:^!\)]|mod|div)', replaced_paste[j + 2:]))] + replaced_paste[j + 2:]
-            replaced_paste = replaced_paste[1:-1]
-
-            replaced_paste = replaced_paste.replace('U', '(U').replace('u', 'u)')
-            replaced_paste = [replaced_paste for _ in range(2)]
-            
-            for i in range(2):
-                while re.search(a := r'\(([^()]*)\)', replaced_paste[i]):
-                    old_cycle_step_replaced_paste = replaced_paste[i]
-                    replaced_paste[i] = modified_pasted_logarythm(replaced_paste[i], alter=i)
-                    if old_cycle_step_replaced_paste == replaced_paste[i]:
-                        replaced_paste[i] = 'ошибка вставки! ' + replaced_paste[i].replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
-                        break
-                else:
-                    replaced_paste[i] = modified_pasted_logarythm(replaced_paste[i], alter=i)
-                    replaced_paste[i] = replaced_paste[i].replace('&@@&@@', '(').replace('@&&@&&', ')') # log(2+log(25)by(5);log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))
-                    replaced_paste[i] = replaced_paste[i].replace('base', 'by')  # log(log100(15+(log4(1/64)+log8(64))*(5+5))+log(69;r69);2+log(5)by(25))
-                replaced_paste[i] = replaced_paste[i].replace('(U', '|').replace('u)', '|')
-    alter_replaced_paste = replaced_paste
-    if type(replaced_paste) is list:
-        replaced_paste, alter_replaced_paste = replaced_paste
-
     if not re.search(r'[а-яА-ЯЁё]', replaced_paste):
         replaced_paste = replace_paste_symbols(replaced_paste)
-    if not re.search(r'[а-яА-ЯЁё]', alter_replaced_paste):
-        alter_replaced_paste = replace_paste_symbols(alter_replaced_paste)
-
-    change_text(replaced_paste)
-    if 'log' in replaced_paste and alter_replaced_paste != replaced_paste:
-        create_tape('info', alter_replaced_paste + ' – нажми меня, если имелось ввиду это')
+    start, end = change_text(replaced_paste)
+    if 'log' in replaced_paste:
+        create_tape('info', f'{re.sub(fr'{re.escape(replaced_paste)}$', get_alternate_log_var(replaced_paste), example_value[:cursor_index])}{example_value[cursor_index:]}' + ' – нажми меня, чтобы поменять местами аргументы логарифмов')
     return 'break'
 
     
@@ -4052,9 +4052,5 @@ main_win.bind('<Control-t>', change_theme)
 main_win.bind('<Control-T>', change_theme)
 
 calculate_result()
-
-if time.time() - recents['closing time'][-1] > 15:
-    change_text('', 0, len(entry_box.get()))
-    ROUND_ANSWER_TO_MANUALLY = settings['round'] = 'по умолчанию'
 
 main_win.mainloop()
