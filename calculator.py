@@ -18,6 +18,8 @@ from maths import *
 from info import *
 pyautogui.PAUSE = 0
 
+from virtual_keyboard import create_keyboard, delete_keyboard, toggle_keyboard, recreate_keyboard
+
 # Пример подключения внизу calculator.py (перед main_win.mainloop()):
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -190,7 +192,7 @@ with open(f'{FILES}/settings.json', 'r') as settings_file:
     try:
         settings = json.load(settings_file)
     except json.decoder.JSONDecodeError:
-        settings = {'y': MAX_COORD, 'x': 0, 'history length': 4000, 'theme': ('dark', 'light')[not is_dark_theme()], 'scale': 3, 'round': 'по умолчанию'}
+        settings = {'y': MAX_COORD, 'x': 0, 'history length': 4000, 'history type': 'history', 'theme': ('dark', 'light')[not is_dark_theme()], 'scale': 3, 'round': 'по умолчанию'}
         rewrite_json('settings')
 if recents['rounding info longer'] == 0:
     recents['rounding info longer'] = (time.time() - recents['closing time'][-1] > 28 * DAY) * 2
@@ -1016,12 +1018,16 @@ def added_win_control_keypress(event):
         key.widget = key_old.widget
         key.char = ''
         set_cursor_to_the(key, define_future_of_cursor(('left', 'right')[key_old.keysym == 'greater']))
+    elif keysym == 'n':
+        change_history_type()
+    elif keysym == 'k':
+        toggle_keyboard(added_win, help_text=help_text, theme=settings['theme'])
     elif keysym == 'w':
         manage_not_main_window_close()
     elif keysym == 'a':
         text_entry.tag_add(SEL, '1.0', 'end')
     elif keysym == 's':
-        save_example_to_history()
+        save_example_to_history(example_to_save=entry_box.get())
     elif keysym == 'slash':
         create_added_win('?')
     elif keysym == 'h':
@@ -1115,8 +1121,7 @@ def create_added_win(win_type):
     text_entry.bind('?', lambda key: create_added_win('?'))
     added_win.bind('<Control-Shift-Key>', added_win_control_keypress)
     text_entry.bind('<Control-Shift-Key>', added_win_control_keypress)
-    added_win.bind('<Control-Key>', added_win_control_keypress)
-    text_entry.bind('<Control-Key>', added_win_control_keypress)
+    (added_win, text_entry)[added_win.title() != 'инструкция'].bind('<Control-Key>', added_win_control_keypress)
     added_win.bind('<Control-space>', added_win_switch_to_string)
     text_entry.bind('<Control-space>', added_win_switch_to_string)
     added_win.bind('<Alt-space>', added_win_switch_to_string)
@@ -1260,7 +1265,7 @@ def create_tape(tape_type='undo-redo', info_blit='', info_action=None):
         tape_info_label = Label(tape, text=info_blit, font=('Arial', HEIGHT // 2), fg=entry_box.cget('fg'), bg=entry_box.cget('bg'))
         tape_info_label.place(x=0, y=0)
         resize_and_retheme_canvas_drawings()
-        tape.bind('<ButtonPress-1>', lambda event: None if not (a := 'нажми меня, если имелось ввиду это') in info_blit
+        tape.bind('<ButtonPress-1>', lambda event: None if not (a := ' – нажми меня, чтобы поменять местами аргументы логарифмов') in info_blit
                   else (entry_box.delete(0, END), entry_box.insert(END, info_blit.split(' – ')[0]), calculate_result(), pyautogui.moveTo(event.x_root, event.y_root + (-HEIGHT, HEIGHT)[settings['y'] - HEIGHT > 0]), destroy_tape()))
         tape.bind('<Motion>', set_tape_creation_time)
         tape.bind('<Shift-MouseWheel>', shift_info_for_more_comftable_reading)  # для удобного потягивания по тачпаду
@@ -2080,6 +2085,12 @@ def manage_key_event(key, just_from_added_win=False):
             else:
                 if (i_got_pattern := re.match(fr'\s*(?:\S|$)', example_value[cursor_index:])):
                     cursor_index += len(i_got_pattern[0])
+        elif keysym == 'Return':
+            if settings['history type'] != 'history': 
+                example_value = solve_example(example_value)
+                cursor_index = len(example_value)
+                keysym = 'dollar'
+                keysym_char = '$'
         elif keysym == 'asciitilde':
             example_value = insert_in_example(example_value, 'q')
         elif keysym not in special_keys and len(keysym) == 1:
@@ -2110,7 +2121,8 @@ def manage_key_event(key, just_from_added_win=False):
         text_entry.tag_config('highlight', background=text_entry.tag_cget('sel', 'background'))
         highlight_all_words(text_entry, re.sub(r'[^\s0-9φπeа-яА-ЯЁё"\'«»“”()/•+a-zA-z-√|!^]', r'', example_value), 'highlight')
 
-    if keysym in ('grave', 'Return', 'BackSpace', 'Delete', 'apostrophe', 'quotedbl') or keysym_char == 'ё' or num_is_part_of_deleted and is_num(recent_examples[-2][1], correct_answer_num_symbols):
+    if settings['history type'] == 'history' and (keysym in ('grave', 'Return', 'BackSpace', 'Delete', 'apostrophe', 'quotedbl') or
+        keysym_char == 'ё' or num_is_part_of_deleted and is_num(recent_examples[-2][1], correct_answer_num_symbols)):
         indexes_of_selection = None
         perfect_ex_for_ans = ''
         if num_is_part_of_deleted and (keysym in ('Delete', 'BackSpace', 'grave', 'changed text') or keysym_char == 'ё'):
@@ -2224,12 +2236,12 @@ def supermanage_key_event(key, just_from_added_win=False):
             destroy_tape()
         
         
-def save_example_to_history(*key):
+def save_example_to_history(*key, example_to_save=None):
     global history_of_calculations, i_history, i_last_example, added_win, settings, example_value, cursor_index, can_backspace, indexes_of_selection, keyboard_layout_memory
     set_last_func_is_ctrl_shift_scroll(False)
     set_del_mode(False)
     indexes_of_selection = None
-    perfect_ex_for_ans = recents['recent examples'][-1][2]
+    perfect_ex_for_ans = (recents['recent examples'][-1][2], example_to_save)[example_to_save is not None]
     for i in range(2):
         for j in range(-3, 0):
             if perfect_ex_for_ans[j:] in ending_symbols:
@@ -2963,7 +2975,8 @@ def paste_text(*key):
                     example_value = re.sub(fr'(?<!di)v{index2 + 1}', item2, example_value)
                 cursor_index = len(example_value)
                 make_it_future()
-                save_example_to_history()
+                if settings['history type'] == 'history':
+                    save_example_to_history()
                 copied_results.append(result.get().replace('=', ''))
                 new_examp_val = example_value
                 example_value = old_examp_val
@@ -3306,12 +3319,16 @@ def rank_text(key=None):
     main_win.after(after_tick_symbol_time + 200, lambda: (entry_box.delete(0, END), entry_box.insert(END, example_value), change_width_of_entry(entry_box.get(), entry_box, result)))
 
 
+def change_history_type(*key):
+    settings['history type'] = ('notes', 'history')[settings['history type'] == 'notes']
+
+
 for val, func in {'a': select_all, 'c': copy_text, 'x': cut_text, 'v': paste_text, 'y': ctrl_y, 'z': ctrl_z,
-                  's': save_example_to_history, 'w': close_main_win_with_layout_switching,
+                  's': lambda key: save_example_to_history(example_to_save=entry_box.get()), 'w': close_main_win_with_layout_switching,
                   'h': lambda key: create_added_win('h'), 'f': rank_text, **{i: (lambda key: main_win.event_generate('<question>')) for i in ('q', 'i')},
                   'l': lambda key: change_size_of_everything(1), 'm': lambda key: change_size_of_everything(3), 'b': lambda key: change_size_of_everything(5),
-                  **{i: move_to_edges for i in 'eud'}}.items():
-    
+                  **{i: move_to_edges for i in 'eud'}, 'k': lambda key: toggle_keyboard(main_win, help_text=help_text, theme=settings['theme']),
+                  'n': change_history_type}.items():
     for key in (val, val.upper()):
         main_win.bind(f'<Control-{key}>', func)
 
@@ -3688,8 +3705,9 @@ def change_theme(event):
         text_entry.tag_remove(SEL, '1.0', 'end')
         text_entry.tag_add(SEL, start_sel, end_sel)
 
-    if added_win.title() != invisible_win_title: set_window_theme_border(window=added_win, is_dark_theme=settings['theme'] == 'dark')
+        if added_win.title() != invisible_win_title: set_window_theme_border(window=added_win, is_dark_theme=settings['theme'] == 'dark')
     if tape: resize_and_retheme_canvas_drawings()
+    recreate_keyboard(settings['theme'])
         
         
 def unbind_left_button():
@@ -3736,7 +3754,7 @@ def check_theme_or_geometry_change():
             pyautogui.hotkey('ctrl', 'backspace')
             main_win.after(20, unbind_left_button)
             example_value = entry_box.get()
-    elif curr_time - tape_creation_time > (1.5, 5)[bool(tape) and int(tape_canvas.cget('width')) == 0 and 'нажми меня, если имелось ввиду это' in tape_info_label.cget('text')]:
+    elif curr_time - tape_creation_time > (1.5, 5)[bool(tape) and int(tape_canvas.cget('width')) == 0 and ' – нажми меня, чтобы поменять местами аргументы логарифмов' in tape_info_label.cget('text')]:
         destroy_tape()
 
     main_win.after(50, check_theme_or_geometry_change)  # проверять каждую двадцатую секунды

@@ -1,53 +1,61 @@
 """
-virtual_keyboard.py — почти прозрачная экранная клавиатура-шпаргалка для строки-калькулятора.
+virtual_keyboard.py — экранная клавиатура-шпаргалка для строки-калькулятора.
 
 Вместо букв на клавишах — слова-подсказки, которые берутся из help_text (info.help_text
 или help.txt рядом со скриптом). Буква клавиши в слове выделена жирным; если её в слове
 нет (x^2, умножение, история ...), подпись клавиши стоит слева от слова.
 
-• Цвета — все элементы выполнены в серых тонах.
-• Скруглены рамки клавиш; окно почти прозрачное (-alpha) и пропускает клики мыши.
-• Размеры считаются от рабочей области экрана — подходит любому разрешению.
-• Перенос текста: длинные подсказки автоматически переносятся на новую строку для читаемости.
-• Слои: зажми Shift — подсказки больших букв (буквы крупные), зажми Ctrl — подсказки
-  для ctrl+клавиша. Нажатая клавиша подсвечивается.
-• Включение/выключение: удерживай Shift или Ctrl hold_toggle_seconds секунд (пока фокус
-  в калькуляторе) — клавиатура включится; ещё раз удержи дольше — выключится.
-• Закрытие: нажатие клавиши Esc скрывает клавиатуру.
+• Цвета — серые тона, подсказки яркие, фон плотный (alpha по умолчанию 0.85).
+• Скруглены рамки клавиш; окно пропускает клики мыши.
+• Размеры считаются от рабочей области экрана.
+• Перенос слов: если подсказка не влезает в клавишу, она переносится на 2-3 строки,
+  шрифт уменьшается только когда ни один вариант переноса не помог.
+• Слои: зажми Shift — подсказки больших букв, зажми Ctrl — подсказки ctrl+клавиша.
+  Нажатая клавиша подсвечивается.
 
-Подключение в calculator.py (перед main_win.mainloop()):
+Привязка в calculator.py (ты привязываешь сам):
 
-    from virtual_keyboard import VirtualKeyboard
-    vkb = VirtualKeyboard(main_win, help_text=help_text, theme=lambda: settings['theme'],
-                          hold_toggle_seconds=5)
+    from virtual_keyboard import create_keyboard, delete_keyboard, toggle_keyboard
 
-Отдельный запуск (закрыть: Ctrl+Alt+Q или Esc):  python virtual_keyboard.py [--theme dark|light] [--alpha 0.35]
+    toggle = lambda e: toggle_keyboard(main_win, help_text=help_text,
+                                       theme=lambda: settings['theme'])
+    main_win.bind('<Control-k>', toggle)
+    entry.bind('<Control-k>', toggle)   # у Entry/Text своя реакция на Ctrl+K — перебиваем её
+
+Функции:
+    create_keyboard(master, help_text=None, **kwargs)  — создать и показать
+    delete_keyboard()                                  — удалить
+    toggle_keyboard(master, help_text=None, **kwargs)  — чередует создание/удаление
+
+Отдельный запуск (Ctrl+K — показать/скрыть, Ctrl+Alt+Q — закрыть):
+    python virtual_keyboard.py [--theme dark|light] [--alpha 0.85]
 """
+import itertools
 import re
 import sys
-import time
 import ctypes
 import traceback
 from pathlib import Path
 from tkinter import Tk, Toplevel, Canvas, TclError, font as tkfont
 
+
 # ==============================================================================
-# ПАЛИТРА — все элементы выполнены в серых тонах
+# ПАЛИТРА — серые тона, подсказки яркие
 # ==============================================================================
 def get_palette(theme_is_light):
     pick = lambda dark, light: light if theme_is_light else dark
     return {
-        'panel_bg': pick('#1a1a1a', '#e0e0e0'),  # фон панели
-        'win_bg': pick('#2b2b2b', '#d5d5d5'),    # фон окна
-        'fg': pick('#cccccc', '#333333'),        # цвет текста / акцент
-        'sel': pick('#444444', '#b5b5b5'),       # фон выделения
-        'thumb': pick('#888888', '#777777'),     # бегунок
-        'help': {                                # все цвета справки — оттенки серого
-            'black': pick('#aaaaaa', '#555555'),
-            'green': pick('#999999', '#666666'),
-            'blue': pick('#888888', '#777777'),
-            'gray': pick('#777777', '#888888'),
-            'red': pick('#666666', '#555555'),
+        'panel_bg': pick('#101010', '#f2f2f2'),  # фон панели
+        'win_bg': pick('#262626', '#dcdcdc'),    # фон клавиш
+        'fg': pick('#ffffff', '#000000'),        # акцент (выделенная буква)
+        'sel': pick('#505050', '#b0b0b0'),       # фон выделения
+        'thumb': pick('#a0a0a0', '#666666'),     # рамка нажатой клавиши
+        'help': {                                # оттенки серого, заметно ярче
+            'black': pick('#f0f0f0', '#1f1f1f'),
+            'green': pick('#e0e0e0', '#2e2e2e'),
+            'blue': pick('#d2d2d2', '#3d3d3d'),
+            'gray': pick('#c4c4c4', '#4c4c4c'),
+            'red': pick('#b6b6b6', '#5a5a5a'),
         },
     }
 
@@ -66,63 +74,64 @@ def help_line_color_name(lines, i):
 # ==============================================================================
 HINTS = {
     'normal': {
-        'q': (r'(Quantize)', 'Quantize - округлить'),
-        'w': (r'(poWer)', 'poWer - степень'),
-        'e': (r'(константа e)', 'константа e'),
-        'r': (r'(Root / Radical)', 'Root / Radical - корень'),
-        't': (r'(tg)', 'tg - тангенс'),
+        'q': (r'(Quantize)', 'quantize округлить'),
+        'w': (r'(poWer степень)', 'poWer степень'),
+        'e': (r'(e≈2.718)', 'e≈2.718'),
+        'r': (r'(Root / Radical корень)', 'root / radical корень'),
+        't': (r'(tg тангенс)', 'tg тангенс'),
         'y': (r'(E-)', 'E-'),
-        'u': (r'(парабола)', 'парабола - квадрат'),
+        'u': (r'(sqUare x^2)', 'square x^2'),
         'i': (r'(phI)', 'phI / factorIal'),
-        'o': (r'(\(\))', '() - round brackets'),
-        'p': (r'(pi)', 'pi - число пи'),
-        'a': (r'(abs)', 'abs'),
+        'o': (r'(\(\))', '() round brackets'),
+        'p': (r'(pi)', 'pi'),
+        'a': (r'(Arc обратная триг.функция)', 'arc обратная тригонометрия'),
         's': (r'(sin)', 'sin'),
-        'd': (r'(darc)', 'darc'),
-        'f': (r'(Factorial)', 'Factorial - факториал !'),
-        'g': (r'(lG)', 'lG - log10'),
-        'h': (r'(history)', 'history, half'),
-        'j': (r'(куб)', 'куб (кубическая парабола)'),
-        'k': (r'(Kilo)', 'Kilo'),
+        'd': (r'(d антиугловая функция)', 'd антиугловая функция'),
+        'f': (r'(Factorial факториал !)', 'factorial факториал !'),
+        'g': (r'(lG log10)', 'lG log10'),
+        'h': (r'(history память, half)', 'history память истории, half'),
+        'j': (r'(куб, \(парабола x^3\))', 'куб x^3'),
+        'k': (r'(Kilo тысяча)', 'Kilo тысяча'),
         'l': (r'(Log)', 'Log'),
-        'z': (r'(Zeros)', 'Zeros'),
-        'x': (r'(Умножение)', 'Умножение'),
+        'z': (r'(Zeros 3 нуля)', 'Zeros 3 нуля'),
+        'x': (r'(Умножить)', 'Умножить'),
         'c': (r'(cos)', 'cos'),
-        'v': (r'(variable)', 'var - variable - переменная'),
-        'b': (r'(base)', 'by - base - основание'),
-        'n': (r'(lN)', 'lN - Natural logarythm'),
+        'v': (r'(variable переменная)', 'variable переменная'),
+        'b': (r'(base основание)', 'base основание'),
+        'n': (r'(lN)', 'lN Natural logarythm'),
         'm': (r'(mod)', 'mod'),
     },
     'shift': {
-        'q': (r'(quadrillion)', 'Quadrillion - 10^15'),
-        'e': (r'(exp)', 'exp - экспонента'),
-        't': (r'(Trillion)', 'Trillion - 10^12'),
-        'u': (r'(биквадрат)', 'биквадрат'),
+        'q': (r'(quadrillion)', 'Quadrillion 10^15'),
+        'e': (r'(exp)', 'exp экспонента'),
+        't': (r'(Trillion)', 'Trillion 10^12'),
+        'u': (r'(биквадрат x^4)', 'биквадрат x^4'),
         'p': (r'(phi)', 'phi'),
         'f': (r'(Fi)', 'Fi'),
-        'c': (r'(Ctg)', 'Ctg'),
-        'd': (r'(div)', 'div'),
-        'j': (r'(кубическая)', 'кубическая парабола круче'),
-        'b': (r'(billion)', 'billion - миллиард'),
-        'm': (r'(Million)', 'Million'),
-        'a': (r'(модуль)', 'модуль'),
+        'c': (r'(Ctg котангенс)', 'Ctg котангенс'),
+        'd': (r'(div деление нацело)', 'div деление нацело'),
+        'j': (r'(кубическая)', 'суперкуб x^5'),
+        'b': (r'(billion)', 'billion миллиард'),
+        'm': (r'(Million миллион)', 'Million миллион'),
+        'a': (r'(Abs)', 'abs модуль'),
     },
     'ctrl': {
         'q': (r'ctrl\+q \((question)\)', 'question'),
-        'i': (r'ctrl\+i \((instruction)\)', 'instruction'),
-        'h': (r'ctrl\+h\s*—\s*[^(]*\((история)\)', 'история'),
-        'w': (r'(закрывают окно)', 'закрывают окно'),
-        'e': (r'ctrl\+e \((edge)', 'edge'),
-        'u': (r'ctrl\+u \((up)', 'up'),
-        'd': (r'ctrl\+d \((down)', 'down'),
-        't': (r'ctrl\+t \((theme)\)', 'theme'),
-        'b': (r'ctrl\+b \((big)', 'big'),
-        'm': (r'ctrl\+m \((middle)', 'middle'),
-        'l': (r'ctrl\+l \((little)', 'little'),
-        'f': (r'ctrl\+f (сортирует)', 'сортирует'),
-        's': (r'ctrl\+s.*?(в историю)', 'в историю'),
+        'i': (r'ctrl\+i \((instruction инструкция)\)', 'instruction инструкция'),
+        'h': (r'ctrl\+h\s*—\s*[^(]*\((history история)\)', 'history история'),
+        'w': (r'(закрыть окно)', 'закрыть окно'),
+        'e': (r'ctrl\+e \((edge край)', 'edge край'),
+        'u': (r'ctrl\+u \((up вверх)', 'up вверх'),
+        'd': (r'ctrl\+d \((down вниз)', 'down вниз'),
+        't': (r'ctrl\+t \((theme поменять тему)\)', 'theme поменять тему'),
+        'b': (r'ctrl\+b \((big крупный)', 'big крупный'),
+        'm': (r'ctrl\+m \((middle средний)', 'middle средний'),
+        'l': (r'ctrl\+l \((little мелкий)', 'little мелкий'),
+        'f': (r'ctrl\+f (find сортирует по похожести)', 'find сортирует по похожести'),
+        's': (r'ctrl\+s.*?(save сохранить в историю)', 'save сохранить в историю'),
         'z': (r'ctrl\+z перемещает на 1 действие (назад)', 'назад'),
         'y': (r'ctrl\+y\s*—\s*(вперёд)', 'вперёд'),
+        'k': (r'ctrl\+k \((keyboard)\)', 'keyboard открыть/закрыть клавиатуру'),
     },
 }
 
@@ -194,8 +203,8 @@ class VirtualKeyboard:
     ROW_OFFSETS = (0.0, 0.25, 0.75)
     KEY_ASPECT = 1.6
     PAD, GAP = 0.16, 0.09
-    WIDTH_FRACTION = 0.62
-    HEIGHT_FRACTION = 0.34
+    WIDTH_FRACTION = 0.9
+    HEIGHT_FRACTION = 0.5
     FONT_FAMILY = 'Arial'
     COLOR_KEY = '#ff00ff'
     TICK_MS = 40
@@ -205,9 +214,8 @@ class VirtualKeyboard:
 
     VK_SHIFT, VK_CONTROL, VK_MENU = 0x10, 0x11, 0x12
 
-    def __init__(self, master=None, help_text=None, theme='auto', alpha=0.35, anchor='bottom',
-                 margin=0.06, click_through=True, close_hotkey=False,
-                 hold_toggle_seconds=None, hold_requires_focus=True):
+    def __init__(self, master=None, help_text=None, theme='auto', alpha=0.85, anchor='bottom',
+                 margin=0.06, click_through=True, close_hotkey=False):
         self.own_root = master is None
         self.master = Tk() if self.own_root else master
         self.win = self.master if self.own_root else Toplevel(self.master)
@@ -218,8 +226,7 @@ class VirtualKeyboard:
 
         self.theme_arg, self.anchor, self.margin = theme, anchor, margin
         self.click_through, self.close_hotkey = click_through, close_hotkey
-        self.hold_seconds, self.hold_requires_focus = hold_toggle_seconds, hold_requires_focus
-        self.hold_start, self.hold_fired = None, False
+        self.k_was_down = False
         self.hints = resolve_hints(load_help_text(help_text))
         self.has_colorkey = True
         try:
@@ -351,31 +358,47 @@ class VirtualKeyboard:
         self.canvas.itemconfigure(self.key_ids[letter][0], fill=pal['sel'] if pressed else pal['win_bg'],
                                   outline=pal['thumb'] if pressed else pal['sel'] if hinted else pal['win_bg'])
 
-    def _fit(self, options, max_w, max_h, caption, scale):
-        """Подбирает оптимальный размер шрифта, отдавая предпочтение многострочным вариантам."""
-        def best_px(opt_lines):
-            px = self.m['font_px']
-            while px > self.m['font_min']:
-                font, big = self._font(px), self._font(round(px * scale), True)
-                width = max(font.measure(line) for line in opt_lines)
-                if caption:
-                    width += big.measure(caption) + px * 0.35
-                elif len(opt_lines) == 1 and scale > 1:
-                    width += (scale - 1) * px * 0.7
-                height = font.metrics('linespace') * len(opt_lines)
-                if width <= max_w and height <= max_h:
-                    break
-                px -= 1
-            return px
+    @staticmethod
+    def _wrap_options(text, max_lines=3):
+        """Все варианты переноса по пробелам (тире '- слово' не отрывается от слова).
+        Вариант = список (start, end) срезов text. Сначала меньше строк, затем ровнее."""
+        toks = [(m.start(), m.end()) for m in re.finditer(r'-\s\S+|\S+', text)]
+        options = [[(0, len(text))]]
+        n = len(toks)
+        for k in range(2, min(max_lines, n) + 1):
+            for cuts in itertools.combinations(range(1, n), k - 1):
+                bounds = (0, *cuts, n)
+                options.append([(toks[a][0], toks[b - 1][1]) for a, b in zip(bounds, bounds[1:])])
+        options.sort(key=lambda o: (len(o), max(e - s for s, e in o)))
+        return options
 
-        best_opt = options[0]
-        best_px_val = best_px(options[0])
+    @staticmethod
+    def _segments(text, line, idx):
+        """Разбивает строку на куски (текст, выделен_ли) — выделена буква клавиши."""
+        s, e = line
+        if idx is not None and s <= idx < e:
+            return [(t, acc) for t, acc in ((text[s:idx], False), (text[idx], True), (text[idx + 1:e], False)) if t]
+        return [(text[s:e], False)]
 
-        for opt in options[1:]:
-            p = best_px(opt)
-            if p >= best_px_val * 1.15:  # если перенос позволяет сделать шрифт крупнее — выбираем его
-                best_opt, best_px_val = opt, p
-        return best_opt, best_px_val
+    def _fit(self, options, text, idx, max_w, max_h, caption, scale):
+        """Максимально крупный шрифт; к уменьшению шрифта переходим, только если
+        не помог ни один вариант переноса."""
+        m = self.m
+        best = (options[0], m['font_min'], float('inf'))
+        for px in range(m['font_px'], m['font_min'] - 1, -1):
+            font, big = self._font(px), self._font(round(px * scale), True)
+            cap_w = big.measure(caption) + px * 0.35 if caption else 0
+            line_h = font.metrics('linespace')
+            for opt in options:
+                if line_h * len(opt) > max_h:
+                    continue
+                width = cap_w + max(sum((big if acc else font).measure(t)
+                                        for t, acc in self._segments(text, ln, idx)) for ln in opt)
+                if width <= max_w:
+                    return opt, px
+                if px == m['font_min'] and width < best[2]:
+                    best = (opt, px, width)
+        return best[0], best[1]
 
     def _draw_label(self, letter, box, word, color_name):
         x1, y1, x2, y2 = box
@@ -387,68 +410,33 @@ class VirtualKeyboard:
         base = display_word(word)
         if shift and idx is not None:
             base = base[:idx] + base[idx].upper() + base[idx + 1:]
-        note = self.NOTES.get((self.layer, letter), '')
+        text = base + self.NOTES.get((self.layer, letter), '')
         caption = None if idx is not None else (letter.upper() if shift else letter)
 
-        # Варианты отображения: одна строка или с переносом на вторую строку
-        options = [[base + note]]
-        has_multi = False
-        
-        if not note and idx is not None and ' - ' in base:
-            parts = base.split(' - ', 1)
-            if idx < len(parts[0]):
-                options.append([parts[0], '- ' + parts[1]])
-                has_multi = True
-        elif not note and idx is None:
-            if ' ' in base:
-                parts = base.split(' ')
-                cut = min(range(1, len(parts)), key=lambda n: abs(len(' '.join(parts[:n])) - len(' '.join(parts[n:]))))
-                options.append([' '.join(parts[:cut]), ' '.join(parts[cut:])])
-
-        lines, px = self._fit(options, (x2 - x1) * 0.93, (y2 - y1) * 0.8, caption, scale)
+        lines, px = self._fit(self._wrap_options(text), text, idx,
+                              (x2 - x1) * 0.93, (y2 - y1) * 0.8, caption, scale)
         font, big = self._font(px), self._font(round(px * scale), True)
-        
-        put = lambda x, y, s, f, fill, anchor: self.canvas.create_text(x, y, text=s, font=f, fill=fill,
-                                                                        anchor=anchor, tags='label')
-        
+        line_h = font.metrics('linespace')
+        measure = lambda t, acc: (big if acc else font).measure(t)
+        widths = [sum(measure(t, acc) for t, acc in self._segments(text, ln, idx)) for ln in lines]
+        block_w = max(widths)
+
+        put = lambda x, y, s, f, fill: self.canvas.create_text(x, y, text=s, font=f, fill=fill,
+                                                               anchor='w', tags='label')
         if caption is not None:
             gap, cap_w = px * 0.35, big.measure(caption)
-            block_w, line_h = max(font.measure(line) for line in lines), font.metrics('linespace')
-            x = cx - (cap_w + gap + block_w) / 2
-            put(x, cy, caption, big, accent, 'w')
-            for n, line in enumerate(lines):
-                put(x + cap_w + gap + block_w / 2, cy + (n - (len(lines) - 1) / 2) * line_h, line, font, color, 'center')
-        elif len(lines) == 2 and has_multi:
-            line_h = font.metrics('linespace')
-            for n, line in enumerate(lines):
-                y = cy + (n - 0.5) * line_h
-                if n == 0:
-                    term = line
-                    pre, ch, suf = term[:idx], term[idx], term[idx + 1:] + note
-                    w_pre, w_ch, w_suf = font.measure(pre), big.measure(ch), font.measure(suf)
-                    x = cx - (w_pre + w_ch + w_suf) / 2
-                    if pre:
-                        put(x, y, pre, font, color, 'w')
-                    put(x + w_pre, y, ch, big, accent, 'w')
-                    if suf:
-                        put(x + w_pre + w_ch, y, suf, font, color, 'w')
-                else:
-                    w_line = font.measure(line)
-                    put(cx - w_line / 2, y, line, font, color, 'w')
-        elif len(lines) > 1 and idx is None:
-            line_h = font.metrics('linespace')
-            for n, line in enumerate(lines):
-                w_line = font.measure(line)
-                put(cx - w_line / 2, cy + (n - (len(lines) - 1) / 2) * line_h, line, font, color, 'w')
+            x0 = cx - (cap_w + gap + block_w) / 2
+            put(x0, cy, caption, big, accent)
+            block_cx = x0 + cap_w + gap + block_w / 2
         else:
-            pre, ch, suf = base[:idx], base[idx], base[idx + 1:] + note
-            w_pre, w_ch, w_suf = font.measure(pre), big.measure(ch), font.measure(suf)
-            x = cx - (w_pre + w_ch + w_suf) / 2
-            if pre:
-                put(x, cy, pre, font, color, 'w')
-            put(x + w_pre, cy, ch, big, accent, 'w')
-            if suf:
-                put(x + w_pre + w_ch, cy, suf, font, color, 'w')
+            block_cx = cx
+
+        for n, (ln, w_line) in enumerate(zip(lines, widths)):
+            y = cy + (n - (len(lines) - 1) / 2) * line_h
+            x = block_cx - w_line / 2
+            for t, acc in self._segments(text, ln, idx):
+                put(x, y, t, big if acc else font, accent if acc else color)
+                x += measure(t, acc)
 
     def set_layer(self, layer):
         if layer != self.layer:
@@ -465,37 +453,23 @@ class VirtualKeyboard:
             self.rebuild()
         if not self.u32:
             return
-        
-        if self._down(0x1B):  # Закрыть / скрыть по Esc
-            self.hide()
-            return
 
         if self.close_hotkey and self._down(self.VK_CONTROL) and self._down(self.VK_MENU) and self._down(ord('Q')):
             self.destroy()
             return
-            
+
         self.set_layer('ctrl' if self._down(self.VK_CONTROL) else 'shift' if self._down(self.VK_SHIFT) else 'normal')
         self.set_pressed({ch for ch in self.key_ids if self._down(ord(ch.upper()))})
-
-    def _check_hold(self):
-        if not self.hold_seconds or not self.u32:
-            return
-        held = self._down(self.VK_SHIFT) or self._down(self.VK_CONTROL)
-        if held and self.hold_requires_focus and self.master.focus_displayof() is None:
-            held = False
-        if not held:
-            self.hold_start, self.hold_fired = None, False
-        elif self.hold_start is None:
-            self.hold_start = time.monotonic()
-        elif not self.hold_fired and time.monotonic() - self.hold_start >= self.hold_seconds:
-            self.hold_fired = True
-            self.toggle()
 
     def _tick(self):
         if self.destroyed:
             return
         try:
-            self._check_hold()
+            if self.own_root and self.u32:  # отдельный запуск: ловим Ctrl+K глобально
+                k_down = self._down(self.VK_CONTROL) and self._down(ord('K'))
+                if k_down and not self.k_was_down:
+                    self.toggle()
+                self.k_was_down = k_down
             if self.visible:
                 self._sync()
             if not self.destroyed:
@@ -509,10 +483,24 @@ class VirtualKeyboard:
     def show(self):
         if self.destroyed or self.visible:
             return
+        try:
+            prev_focus = self.master.focus_get()  # куда вернуть фокус после показа
+        except (KeyError, TclError):
+            prev_focus = None
         self.visible = True
+        self._apply_window_styles()  # стили NOACTIVATE до показа, чтобы окно не забирало фокус
         self.win.deiconify()
         self.win.attributes('-topmost', 1)
         self._apply_window_styles()
+        if prev_focus is not None and not self.own_root:
+            self.master.after(10, lambda: self._restore_focus(prev_focus))
+
+    @staticmethod
+    def _restore_focus(widget):
+        try:
+            widget.focus_force()
+        except TclError:
+            pass
 
     def hide(self):
         if self.destroyed or not self.visible:
@@ -541,11 +529,73 @@ class VirtualKeyboard:
             pass
 
 
+# ==============================================================================
+# ФУНКЦИИ ДЛЯ ПРИВЯЗКИ К main_win
+# ==============================================================================
+_vkb = None  # текущая клавиатура (None, если не создана)
+_vkb_args = None  # (master, help_text, kwargs) последнего создания — для пересоздания
+
+
+def keyboard_exists():
+    """True, если клавиатура создана и ещё не удалена (в том числе если скрыта)."""
+    if _vkb is None or _vkb.destroyed:
+        return False
+    try:
+        return bool(_vkb.win.winfo_exists())  # окно могло умереть вместе с родителем
+    except TclError:
+        return False
+
+
+def create_keyboard(master, help_text=None, **kwargs):
+    """СОЗДАТЬ и сразу показать клавиатуру. Если уже есть, ничего не делает."""
+    global _vkb, _vkb_args
+    if not keyboard_exists():
+        _vkb_args = (master, help_text, kwargs)
+        _vkb = VirtualKeyboard(master, help_text=help_text, **kwargs)
+        _vkb.show()
+    return _vkb
+
+
+def delete_keyboard():
+    """УДАЛИТЬ клавиатуру (окно уничтожается)."""
+    global _vkb
+    if _vkb is not None:
+        _vkb.destroy()
+        _vkb = None
+
+
+def recreate_keyboard(theme=None):
+    """РАЗРУШИТЬ и заново СОЗДАТЬ клавиатуру, ЕСЛИ она существует.
+    theme: новая тема ('dark' / 'light' / 'auto' или функция без аргументов) — клавиатура
+    создаётся сразу с ней и запоминает её; None — параметры прежние.
+    Возвращает True, если клавиатура была и пересоздана."""
+    if not keyboard_exists() or _vkb_args is None:
+        return False
+    master, help_text, kwargs = _vkb_args
+    if theme is not None:
+        kwargs = {**kwargs, 'theme': theme}
+    delete_keyboard()
+    create_keyboard(master, help_text=help_text, **kwargs)
+    return True
+
+
+refresh_keyboard = recreate_keyboard  # старое имя, на всякий случай
+
+
+def toggle_keyboard(master, help_text=None, **kwargs):
+    """Чередует создание и удаление: нечётное нажатие создаёт, чётное удаляет."""
+    if not keyboard_exists():
+        create_keyboard(master, help_text=help_text, **kwargs)
+    else:
+        delete_keyboard()
+    return 'break'  # не даём Entry/Text выполнить свою реакцию на Ctrl+K
+
+
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description='Прозрачная клавиатура-шпаргалка калькулятора')
+    parser = argparse.ArgumentParser(description='Клавиатура-шпаргалка калькулятора')
     parser.add_argument('--theme', choices=('auto', 'dark', 'light'), default='auto')
-    parser.add_argument('--alpha', type=float, default=0.35, help='0.0 (невидимо) ... 1.0 (непрозрачно)')
+    parser.add_argument('--alpha', type=float, default=0.85, help='0.0 (невидимо) ... 1.0 (непрозрачно)')
     parser.add_argument('--anchor', choices=('bottom', 'center', 'top'), default='bottom')
     parser.add_argument('--help-file', help='путь к help.txt (по умолчанию info.help_text или help.txt рядом)')
     args = parser.parse_args()
@@ -558,7 +608,7 @@ def main():
     keyboard_overlay = VirtualKeyboard(None, help_text=text, theme=args.theme, alpha=args.alpha,
                                        anchor=args.anchor, close_hotkey=True)
     keyboard_overlay.show()
-    print('Клавиатура показана. Shift / Ctrl — другие слои, Esc — скрыть, Ctrl+Alt+Q — закрыть')
+    print('Ctrl+K — показать/скрыть клавиатуру, Shift / Ctrl — другие слои, Ctrl+Alt+Q — закрыть')
     keyboard_overlay.master.mainloop()
 
 
