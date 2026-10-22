@@ -3321,6 +3321,8 @@ def rank_text(key=None):
 
 def change_history_type(*key):
     settings['history type'] = ('notes', 'history')[settings['history type'] == 'notes']
+    result.insert(END, f' автосохранение примеров {('вкл', 'откл')[settings['history type'] == 'notes']}ючено')
+    main_win.after(1000, lambda: calculate_result())
 
 
 for val, func in {'a': select_all, 'c': copy_text, 'x': cut_text, 'v': paste_text, 'y': ctrl_y, 'z': ctrl_z,
