@@ -141,7 +141,8 @@ def load_help_text(help_text=None):
     if help_text:
         return help_text
     try:
-        from info import help_text as info_help_text
+        with open('data/help.txt', 'r', encoding='utf-8') as help_file:
+            info_help_text = help_file.read()
         if info_help_text:
             return info_help_text
     except Exception:
@@ -215,7 +216,7 @@ class VirtualKeyboard:
 
     VK_SHIFT, VK_CONTROL, VK_MENU = 0x10, 0x11, 0x12
 
-    def __init__(self, master=None, help_text=None, theme='auto', alpha=0.85, anchor='bottom',
+    def __init__(self, master=None, help_text=None, theme='auto', alpha=0.75, anchor='bottom',
                  margin=0.06, click_through=True, close_hotkey=False):
         self.own_root = master is None
         self.master = Tk() if self.own_root else master
@@ -314,7 +315,7 @@ class VirtualKeyboard:
         y = {'top': top + free, 'center': top + (area_h - panel_h) // 2}.get(self.anchor, bottom - panel_h - free)
         return {'key_w': key_w, 'key_h': key_h, 'gap': gap, 'pad': pad, 'key_r': key_r,
                 'panel_r': key_r + pad,
-                'key_line': max(1, round(key_h / 28)),
+                'key_line': max(1, round(key_h / 150)),
                 'font_px': round(key_h * 0.34), 'font_min': max(8, round(key_h * 0.18)),
                 'w': panel_w, 'h': panel_h, 'x': left + (area_w - panel_w) // 2, 'y': y,
                 'sig': (self.win.winfo_screenwidth(), self.win.winfo_screenheight(), left, top, right, bottom)}
@@ -596,7 +597,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description='Клавиатура-шпаргалка калькулятора')
     parser.add_argument('--theme', choices=('auto', 'dark', 'light'), default='auto')
-    parser.add_argument('--alpha', type=float, default=0.85, help='0.0 (невидимо) ... 1.0 (непрозрачно)')
+    parser.add_argument('--alpha', type=float, default=0.75, help='0.0 (невидимо) ... 1.0 (непрозрачно)')
     parser.add_argument('--anchor', choices=('bottom', 'center', 'top'), default='bottom')
     parser.add_argument('--help-file', help='путь к help.txt (по умолчанию info.help_text или help.txt рядом)')
     args = parser.parse_args()
@@ -606,11 +607,9 @@ def main():
         except Exception:
             pass
     text = Path(args.help_file).read_text(encoding='utf-8-sig') if args.help_file else None
-    keyboard_overlay = VirtualKeyboard(None, help_text=text, theme=args.theme, alpha=args.alpha,
-                                       anchor=args.anchor, close_hotkey=True)
-    keyboard_overlay.show()
+    create_keyboard()
     print('Ctrl+K — показать/скрыть клавиатуру, Shift / Ctrl — другие слои, Ctrl+Alt+Q — закрыть')
-    keyboard_overlay.master.mainloop()
+    _vkb.master.mainloop()
 
 
 if __name__ == '__main__':

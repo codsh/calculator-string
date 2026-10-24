@@ -1,28 +1,40 @@
 import time
+import datetime
+
 from tkinter import *
 from tkinter import font, ttk, SEL_FIRST, SEL_LAST
-from math import log, sqrt
-import math
+
+from collections import Counter
+from functools import lru_cache, wraps
+
 import re
-import random
-from decimal import *
-
 import json
-import datetime
-import pyperclip
-import keyboard
-import ctypes
-import pyautogui
-import subprocess
-from maths import *
-from info import *
-pyautogui.PAUSE = 0
 
-from virtual_keyboard import create_keyboard, delete_keyboard, toggle_keyboard, recreate_keyboard
+import random
+import math
+from decimal import *
+getcontext().prec = 1402
+
+import winreg
+import ctypes
+import ctypes.wintypes
+user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+
+# import pyautogui
+# pyautogui.PAUSE = 0
+
+_mp = None
+def _get_mp():
+    global _mp
+    if _mp is None:
+        from mpmath import mp
+        mp.dps = 402
+        _mp = mp
+    return _mp
+
 
 # Пример подключения внизу calculator.py (перед main_win.mainloop()):
-
-user32 = ctypes.WinDLL("user32", use_last_error=True)
 GetWindowThreadProcessId = user32.GetWindowThreadProcessId
 AttachThreadInput = user32.AttachThreadInput
 WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))
@@ -53,10 +65,10 @@ def create_fake_main_win():
 
 def switch_to_next_window():
     # Прячем калькулятор с экрана: в этот момент Windows находится в шоке и ПРИНУДИТЕЛЬНО отдает фокус и каретку окну, которое было под ним.
-    main_win.after(50, lambda: create_fake_main_win())
-    main_win.after(70, lambda: main_win.withdraw())
+    main_win.after(50, create_fake_main_win)
+    main_win.after(70, main_win.withdraw)
     # Через 200 миллисекунд возвращаем калькулятор обратно. Он появится на том же месте, но фокус останется в чужом окне, а каретка там гарантированно активируется!
-    main_win.after(150, lambda: main_win.deiconify())
+    main_win.after(150, main_win.deiconify)
     main_win.after(170, lambda: fake_main_win.destroy())
     if added_win.focus_displayof():
         main_win.after(200, lambda: main_win.event_generate('<FocusOut>'))
@@ -64,7 +76,7 @@ def switch_to_next_window():
     return 'break'
 
 
-calculator_greeting = 'нажми [?] или ctrl+[/], чтобы узнать как использовать калькулятор'
+calculator_greeting = 'нажми [?] или ctrl+[/], чтобы узнать как работать с калькулятором'
 
 def highlight_i_history_text_and_centralize(i_history):  # здесь была подсветка, которая была неудачна из-за foreground-а
     text_entry.tag_remove(SEL, '1.0', 'end')
@@ -146,6 +158,10 @@ def change_size_of_everything(scale, scale_was_zero=False, change_result=True):
     if tape:
         tape.geometry(f'{WIDTH}x{HEIGHT}+{MIN_X_COORD}+{settings['y'] - HEIGHT}')
         resize_and_retheme_canvas_drawings()
+    close_label.place(x=WIDTH - HEIGHT // 3, y=1, width=HEIGHT // 3 - 1, height=HEIGHT // 3 - 1)
+    close_label.config(font=('Arial', HEIGHT // 3 - 1))
+    hide_label.place(x=WIDTH - 2 * HEIGHT // 3 + 1, y=1, width=HEIGHT // 3 - 1, height=HEIGHT // 3 - 1)
+    hide_label.config(font=('Arial', HEIGHT // 3 - 1))
     
     if change_result:
         if not re.search(calc_geometry_state_change_expression, result.get()):
@@ -168,6 +184,40 @@ def create_greeting():
     with open(f'{FILES}/greetings.json', 'r', encoding='utf-8') as greetings_file:
         calculator_greeting = random.choice(json.load(greetings_file))
         
+
+FILES = 'data'
+DAY = 60 * 60 * 24
+
+screen_width, screen_height = map(user32.GetSystemMetrics, (0, 1))
+
+# Получить высоту панели задач
+def get_taskbar_height():
+    SPI_GETWORKAREA = 48
+    rect = ctypes.wintypes.RECT()
+    user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(rect), 0)
+    taskbar_height = screen_height - (rect.bottom - rect.top)
+    return taskbar_height
+
+def is_dark_theme():
+    # Путь к ключу реестра, где хранятся настройки темы
+    registry_path = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+    value_name = "AppsUseLightTheme"  # Значение, которое определяет светлую или тёмную тему
+
+    try:
+        # Открываем ключ реестра
+        registry_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, registry_path)
+        
+        # Читаем значение
+        value, _ = winreg.QueryValueEx(registry_key, value_name)
+        
+        # Закрываем ключ
+        winreg.CloseKey(registry_key)
+        
+        # Если значение 0, то тема тёмная, иначе светлая
+        return value == 0
+    except FileNotFoundError:
+        # Если ключ или значение не найдены, предполагаем светлую тему (или обработайте ошибку по-другому)
+        return False
 
 TASKBAR_HEIGHT = get_taskbar_height()
 MAX_COORD = screen_height - TASKBAR_HEIGHT - screen_width // 61
@@ -197,13 +247,14 @@ with open(f'{FILES}/settings.json', 'r') as settings_file:
 if recents['rounding info longer'] == 0:
     recents['rounding info longer'] = (time.time() - recents['closing time'][-1] > 28 * DAY) * 2
 
+
 if time.time() - recents['closing time'][-2] >= 60 * DAY:
+    import subprocess
     subprocess.run(['python', 'animation.py'])
 
-    
+
 ROUND_ANSWER_TO_MANUALLY = settings['round']
 
-getcontext().prec = 1402
 # Временная штука для программы работы без ошибки
 max_character_amount = (174, 174, 152, 120, 99, 71)[settings['scale']]
 
@@ -271,7 +322,345 @@ def is_num(symbols, num_symbs=list('0123456789.-Ee+')):
 #                 return ''
 #         else:
 #             return ''
+
+
+def zeros(x):
+    return Decimal('.' + x * '0') if x > 0 else Decimal(f'1e{abs(x)}')
+
+rounds = [zeros(_) for _ in (400, 380, 360, 305, 100)]
+max_denominator = 10000
+
+def rond(num, rounding_accuracy):
+    return num.quantize(rounds[rounding_accuracy], ROUND_HALF_UP)
+
+
+def classmethod_with_cache(func):
+    func = lru_cache()(func)
+    
+    @wraps(func)    
+    def wrapper(cls, *args, **kwargs):
+        return func(cls, *args, **kwargs)
+    
+    return classmethod(wrapper)
+
+
+# --- --- --- was info.py --- --- ---
+invisible_win_title = 'невидимое окно'
+temp_scopes, temp_scopes_with_smth = r'(?:\(-?\)|U-?u)', r'(?:\(.*?\)|U.*?u)'
+oper_for_empty_scopes = r'(?:[+\-/•:^√]|mod|div)'
+func_for_empty_scopes = r'(?:(?:d(?!iv))?(?:arc)?(?:sin|cos|c?tg)|d?arc|lg|ln|d)'
+empty_funcs_scopes_construction = fr'(?:{func_for_empty_scopes}{temp_scopes}|log{temp_scopes}by{temp_scopes_with_smth}|log{temp_scopes_with_smth}by{temp_scopes}|{temp_scopes})'
+calc_geometry_state_change_expression = r'Максимум \d+ символ(?:|а|ов)|Калькулятор теперь (?:вверху|в центре|внизу)'
+pattern_checking_on_empty_scopes = fr'(?:{oper_for_empty_scopes}*{empty_funcs_scopes_construction}(?={oper_for_empty_scopes})|{empty_funcs_scopes_construction})'
+
+
+def count_matches(list1, list2):
+    intersection = Counter(list1) & Counter(list2)
+    return sum(intersection.values())
+
+
+def reunite(words):
+    return [f'{(r'\s*').join(['\\' + symb if symb in '()|' else symb for symb in word])}' for word in words]
+
+darc_generator = tuple([f'{i}{j}' for i in ('darc', 'arc', 'd') for j in ('sin', 'cos', 'ctg', 'tg', '')])
+ddarc_gen = tuple([f'{i}{j}' for i in ('darc', 'arc', 'd', '') for j in ('sin', 'cos', 'ctg', 'tg')])
+
+united_symbols = ('div', 'mod') + darc_generator + ('log', 'sin', 'cos', 'ctg') + ('ln', 'lg', 'tg', 'by')
+composite_trig_funcs = tuple(i for i in darc_generator if i not in ('d', 'arc', 'darc')) + ()
+united_symbols_with_scopes = (tuple(f'{i}{j}' for j in ('|', '(') for i in darc_generator)
+     + ('log(', 'sin(', 'cos(', 'ctg(', ')by(') + ('log|', 'sin|', 'cos|', 'ctg|', '|by|', '|by(', ')by|') + ('by(', ')by', '|by', 'by|') + ('ln|', 'lg|', 'tg|') + ('ln(', 'lg(', 'tg('))
+united_symbols_without_scopes = darc_generator + ('sin', 'cos', 'ctg', 'tg', 'ln', 'lg')  # порядок важен, сначала котангенс а лишь потом тангенс, чтобы удалялся ctg а не c tg
+full_funcs_with_Uu = tuple((f'{i}{j}' for i in ('sin', 'cos', 'tg', 'ctg', 'lg', 'ln') for j in ('()', 'Uu'))) + tuple((f'log{i}by{j}' for i in ('()', 'Uu') for j in ('()', 'Uu')))
+
+special_keys = ('Up', 'Down', 'Left', 'Right', 'Control_L', 'Return', 'grave', 'Tab', 'changed text', 'Win_L'
+                'Control_R', 'Shift_L', 'Shift_R', 'Alt_L', 'Alt_R', 'Escape', 'Caps_Lock', 'apostrophe', 'quotedbl', 'braceleft', 'braceright')
+ghost_keys = ('Up', 'Down', 'Left', 'Right', 'Control_L', 'Control_R', 'Shift_L', 'Shift_R', 'Alt_L', 'Alt_R', 'Caps_Lock')
+keys_after_dot = ('minus', 'equal', 'slash', 'semicolon', 'backslash', 'bracketleft', 'bracketright')
+last_keys = ['' for _ in range(20)]
+
+ending_symbols = list('+-•:^,%@k.') + list(united_symbols)
+correct_answer_num_symbols = '0123456789Ee-+.•^() '
+letters_and_inwords, letters_and_not_example_like_inwords, syntax = r'[а-яА-ЯЁё"\'«»“”()-]', r'[а-яА-ЯЁё"\'«»“”]', r'(?:[.,!?;:/—–]|\s[—–]|\s-\s(?=\w|\d+-\w))'
+last_time_main_win_geometry_change = 0
+last_val_before_geometry_change = 'если это вставится, значение использовали до его определения !!!техническая ошибка разработчиков!!!'
+last_time_round_change = 0
+num_construct = r'((?:\d+[.,]?\d*|[.,]\d+)(?:[eE]-?\d*[.,]?\d*)?|[φπeE])'
+num_construct_with_spaces = r'((?:(?:\d\s*)+(?:[.,]\s*)?(?:\d\s*)*|(?:[.,]\s*)(?:\d\s*)+)(?:[eE]\s*(?:-\s*)?(?:\d\s*)*(?:[.,]\s*)?(?:\d\s*)*)?|[φπeE])'
+num_construct_with_spaces_and_factorials = r'(?:(?:(?:(?:\d\s*)+(?:[.,]\s*)?(?:\d\s*)*|(?:[.,]\s*)(?:\d\s*)+)(?:[eE]\s*(?:-\s*)?(?:\d\s*)*(?:[.,]\s*)?(?:\d\s*)*)?|[φπeE])(\s*!)*)'
+word_construct = '[а-яА-ЯЁё]+'
+tokenator = r'(d?(?:arc)?(?:sin|cos|c?tg)|d?arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\))'
+super_tokenator = r'(sin|cos|c?tg|arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\)|[\dφπeE.])'
+ultra_tokenator = fr'([а-яА-ЯЁё]|\d|{super_tokenator})'
+
+max_history_length, min_history_length = 10000, 100
+tick_symbol_time, after_tick_symbol_time = 330, 500
+word_ends1 = ('е', 'я', 'й')
+word_ends2 = ('', 'а', 'ов')
+
+
+def relatives(arg1, arg2):
+    relative = 0
+    for (arg1, arg2) in ((arg1, arg2), (arg2, arg1)):
+        if arg1 == arg2:
+            relative = max(relative, 1)
+        if (arg1, arg2) in (('sin', 'cos'), ('tg', 'ctg'), ('lg', 'ln')):
+            relative = max(relative, 0.9)
+        if 'arc' + arg1 == arg2 or 'd' + arg1 == arg2 or arg1 == 'arc' and arg2 == 'd' or (arg1, arg2) in (('sin', 'tg'), ('cos', 'ctg'), ('lg', 'log'), ('ln', 'log')):
+            relative = max(relative, 0.85)
+        if 'darc' + arg1 == arg2:
+            relative = max(relative, 0.8)
+        if re.search(r'sin|cos|c?tg|d|arc', arg1) and re.search(r'sin|cos|c?tg|d|arc', arg2):
+            relative = max(relative, 0.65)
+        if re.search(fr'-?{num_construct}', arg1) and re.search(fr'-?{num_construct}', arg2):
+            relative = max(relative, count_matches(arg1, arg2) / max(len(arg1), len(arg2)))
+        for indx, i in enumerate(('√', '!', 'mod', 'div', '^', '|', '•', ':', '+', '-')):
+            if arg1 == i != arg2:
+                relative = max(relative, 1 - (0.98, 0.95, 0.9, 0.6, 0.35)[indx // 2])
+
+    relative = max(relative, 0.1)
+    return relative
+
+
+def clear_q_with_content(example, cursor_place):
+    return re.sub(r'(?:q.*|q?)$', '', example[:cursor_place]) + example[cursor_place:]
+
+
+def clear_space_and_bracks_with_content(example):
+    return re.sub(r' ?\[.*\]', '', example)
+
+
+def get_correct_ending(num, word_endings):
+    if num % 10 in [0, 5, 6, 7, 8, 9] or num % 100 in [11, 12, 13, 14]:
+        return word_endings[2]
+    elif num % 10 == 1:
+        return word_endings[0]
+    else:
+        return word_endings[1]
+
+with open(f'{FILES}/help.txt', 'r', encoding='utf-8') as help_file:
+    help_text = help_file.read()
+
+
+class FakeWindow():
+    def focus_get(self):
+        return
+    
+    def focus_set(self):
+        pass
+    
+    def destroy(self):
+        pass
+    
+    def winfo_viewable(self):
+        return False
+    
+    def title(self):
+        return invisible_win_title
+    
+    def wm_state(self):
+        return 'iconic'
+
+    def focus_displayof(self):
+        return
+
+
+def is_russian_layout() -> bool:
+    """
+    Проверяет, активна ли русская раскладка клавиатуры в текущем окне.
+    Возвращает True для русской раскладки, False для остальных случаев.
+    """
+    
+    # Получаем дескриптор активного окна и его поток
+    hwnd = user32.GetForegroundWindow()
+    thread_id = user32.GetWindowThreadProcessId(hwnd, None)
+    
+    # Получаем идентификатор раскладки клавиатуры
+    keyboard_layout = user32.GetKeyboardLayout(thread_id)
+    language_id = keyboard_layout & 0xFFFF  # Извлекаем младшие 16 бит
+    
+    # Русская раскладка имеет код 0x0419
+    return language_id == 0x0419
+
+
+keyboard_layout_memory = ('en', 'ru')[is_russian_layout()]
+
+# --- --- --- was maths.py --- --- ---
+
+class C:
+    e = Decimal('2.7182818284590452353602874713526624977572470936999595749669676277240766303535475945713821785251664274274663919320030599218'
+                '1741359662904357290033429526059563073813232862794349076323382988075319525101901157383418793070215408914993488416750924476146'
+                '06680822648001684774118537423454424371075390777449920695517027618386062613313845830007520449338265602976067371132007093287091'
+                '27443747047230696977209310141692836819025515108657463772111252389784425056953696770785449969967946864454905987931636889230098')
+    
+    pi = Decimal('3.141592653589793238462643383279502884197169399375105820974944592307816406286208998628034825342117067982148086513282306647'
+                 '093844609550582231725359408128481117450284102701938521105559644622948954930381964428810975665933446128475648233786783165'
+                 '271201909145648566923460348610454326648213393607260249141273724587006606315588174881520920962829254091715364367892590360'
+                 '011330530548820466521384146951941511609433057270365759591953092186117381932611793105118548074462379962749567351885752724')
+    
+    fi = Decimal('1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072072041893911374'
+                 '847540880753868917521266338622235369317931800607667263544333890865959395829056383226613199282902678806752'
+                 '087668925017116962070322210432162695486262963136144381497587012203408058879544547492461856953648644492410')
+    
+    @classmethod_with_cache
+    def factorial(cls, num):
+        num = Decimal(num)
+        if num < 0 and rond(num, 3) % 1 == 0:
+            return f'Факториал целого отрицательного числа смысла не имеет! (±ထ)'
+        return Decimal(str(_get_mp().factorial(num)))
         
+    @classmethod_with_cache
+    def pow(cls, num, power, power_type):
+        num, power = Decimal(num), Decimal(power)
+        if power_type == '^-':
+            power = -power
+        if power < 0:
+            if type(power_result := cls.pow(num, -power, power_type[0])) is str:
+                return power_result
+            return rond(1 / power_result, 2)
+        if power_type == 'k':
+            power = rond(1 / Decimal(power), 0)
+        if num >= 0 or rond(power, 1) % 1 == 0:
+            return rond(Decimal(str(_get_mp().power(num, power))), 0)
+        for odd_num in range(4999, 10000, 2):
+            reversed_pow = 1 / Decimal(odd_num)
+            rounded_reversed_pow = rond(reversed_pow, 1)
+            maybe_num_about_zero = rond(power, 1) % rounded_reversed_pow
+            if rond(maybe_num_about_zero, 2) == 0:
+                num = rond(Decimal(-(abs(num) ** reversed_pow)), 1)
+                power = (power / rounded_reversed_pow).quantize(Decimal('0'), ROUND_HALF_UP)
+                res = num ** power
+                return f'Результат вычисления {'степени' if power_type != 'k' else 'корня'} крайне неточен, поскольку результат числа слишком небольшой!' if res == 0 and num != 0 else res
+        else:
+            return 'Чётный, дробный или слишком большой знаменатель у степени числа!' if power_type != 'k' else 'Нет решения среди действительных чисел, либо слишком большой числитель или степень у корня числа!'
+        
+    @classmethod_with_cache
+    def radical(cls, num, power):
+        num, power = Decimal(num), Decimal(power)
+        if num >= 0:
+            return Decimal(str(_get_mp().power(num, 1 / power)))
+        elif rond(abs(power), 1) % 2 == 1 and num < 0:
+            return rond(-Decimal(str(_get_mp().root(abs(num), power))), 0)
+        else:
+            return cls.pow(num, power, power_type='k')
+    
+    @classmethod_with_cache
+    def log(cls, num_by_log, base):
+        num_by_log, base = Decimal(num_by_log), Decimal(base)
+        
+        base_rond1, num_by_log_rond1 = rond(base, 1), rond(num_by_log, 1)
+        if base_rond1 in (-1, 0, 1):
+            return f'Не существует логарифма по основанию {int(rond(base, 1))} (бесконечное, либо пустое множество)!'
+        if abs(abs(base_rond1) - 1) < 10 ** -20:
+            return 'Поскольку основание логарифма слишком близко к единице ответ сильно неточный!'
+        if num_by_log_rond1 == 0:
+            return 'Не существует логарифма, если логарифмируемое число – ноль!'
+        if abs(num_by_log) > 10 ** 1001 or abs(num_by_log) < 10 ** -305:
+            return 'Слишком большое или маленькое логарифмируемое число логарифма!'
+        if abs(base) > 10 ** 1001 or abs(base) < 10 ** -305:
+            return 'Слишком большое или маленькое основание логарифма!'
+        if base_rond1 > 0 and num_by_log_rond1 < 0:
+            return 'Логарифм отрицательного числа по положительному основанию невозможен!'
+        log_result_if_both_args_positive = Decimal(str(_get_mp().log(abs(num_by_log)) / _get_mp().log(abs(base))))
+        log_result_if_both_args_positive_rond4 = rond(log_result_if_both_args_positive, 4)
+        if base_rond1 < 0 and num_by_log_rond1 < 0 and abs(log_result_if_both_args_positive_rond4 % 2) != 1:
+            return 'Логарифм числа меньше нуля по основанию меньше нуля может вернуть только нечётное число!'
+        if base_rond1 < 0 and num_by_log_rond1 > 0 and log_result_if_both_args_positive_rond4 % 2 != 0:
+            return 'Логарифм числа больше нуля по основанию меньше нуля может вернуть только чётное число!'
+        return log_result_if_both_args_positive if base_rond1 > 0 and num_by_log_rond1 > 0 else log_result_if_both_args_positive_rond4
+    
+    @classmethod
+    def is_rational(cls, angle):
+        angle = angle.rstrip('0')
+        if '.' not in angle or len(angle.split('.')[-1]) < 10 or bool(re.findall(r'(\d+)\1{7}', angle.split('.')[-1][:100])):
+            return True
+        angle = Decimal(angle)
+        for i in range(max_denominator // 2, max_denominator):
+            reversed_angle = 1 / Decimal(i)
+            rounded_reversed_angle = rond(reversed_angle, 1)
+            maybe_num_about_zero = rond(angle, 1) % rounded_reversed_angle
+            if rond(maybe_num_about_zero, 2) == 0:
+                return True
+        else:
+            return False
+
+    
+    @classmethod_with_cache
+    def rad_to_deg(cls, angle, fake_degree_info):
+        is_rat = cls.is_rational(angle)
+        angle = Decimal(angle)
+        if not (is_rat, not is_rat)[fake_degree_info]:
+            angle = cls.deg(angle)
+           
+        if angle > 360 or angle < 360:
+            angle %= 360
+        if angle < 0:
+            angle += 360
+        return angle
+    
+    @classmethod
+    def deg(cls, angle):
+        angle = Decimal(angle)
+        # предподготовка числа, чтобы оно было высчитано более аккуратно
+        if angle > 2 * C.pi or angle < 2 * C.pi:
+            angle %= 2 * C.pi
+        if angle < 0:
+            angle += 2 * C.pi
+            
+        # аккуратное высчитывание числа
+        return rond(angle / C.pi * 180, 0)
+    
+    @classmethod
+    def rad(cls, angle):
+        angle = Decimal(angle)
+        if angle > 360 or angle < 360:
+            angle %= 360
+        if angle < 0:
+            angle += 360
+        angle = rond(angle / 180 * C.pi, 0)
+        return angle
+    
+
+    @classmethod
+    def atrig(cls, func, val):
+        make_info_deg = 'd' not in func
+        func = func.replace('d', '')
+        val = Decimal(val)
+        unc = func[3:]
+        if unc in ('sin', 'cos') and not -1 <= val <= 1:
+            return f'значения {'ко' * (unc == 'cos')}синуса не определены вне промежутка от -1 до 1'
+        angle = {'sin': _get_mp().asin, 'cos': _get_mp().acos, 'tg': _get_mp().atan, 'ctg': _get_mp().acot}[unc](val)
+        if make_info_deg: angle = cls.deg(str(angle))
+        if angle > 180 and unc in ('tg', 'ctg'): angle -= 180
+        return angle
+    
+    
+    @classmethod_with_cache
+    def trig(cls, func, raw_angle):
+        fake_degree_info = 'd' in func
+        func = func.replace('d', '')
+        # is_rat = cls.is_rational(raw_angle)
+        # new_degree_info = (is_rat, not is_rat)[fake_degree_info]
+        # angle = cls.rad_to_deg(raw_angle, fake_degree_info)
+        angle = Decimal(raw_angle)
+        if not fake_degree_info:
+            angle = rond(angle / C.pi * 180, 0)
+        if func in ('tg', 'cos') and rond(angle, 1) % 180 == 90:
+            return f'Тангенс углов {('π/2, 3π/2, 5π/2, ...', '90, 270, 450, ...')[fake_degree_info]} смысла не имеет! (±ထ)' if func != 'cos' else 0  # new_degree_info вместо fake_degree_info было
+        if func in ('sin', 'ctg') and rond(angle, 1) % 180 == 0:
+            return f'Котангенс углов {('0, π, 2π, ...', '0, 180, 360, ...')[fake_degree_info]} смысла не имеет! (±ထ)' if func != 'sin' else 0  # new_degree_info вместо fake_degree_info было
+        angle = rond(angle / 180 * C.pi, 1)
+        if func == 'sin':
+            return _get_mp().sin(angle)
+        if func == 'cos':
+            return _get_mp().cos(angle)
+        if func == 'tg':
+            return _get_mp().sin(angle) / _get_mp().cos(angle)
+        if func == 'ctg':
+            return _get_mp().cos(angle) / _get_mp().sin(angle)
+
+
+# --- --- --- ends maths.py --- --- ---
+
 
 def create_perfect_example(non_perfect_example):
     non_perfect_example = rescope_example(non_perfect_example)
@@ -478,7 +867,7 @@ def solve_example(example=None, get_raw_ans=False):
         info_if_rounding = "не удаляй 'q' 10 секунд, чтобы пример округлился"
         info_if_start_rounding = f' (допиши число знаков: от {mn} до {mx} (перед/после запятой), {info_if_rounding})'
         info_if_continue_rounding = f" ({info_if_rounding})"
-        if re.fullmatch(r'-?', example[example.index('q') + 1:cursor_or_selected_end_index]):
+        if a := re.fullmatch(r'-?', example[example.index('q') + 1:cursor_or_selected_end_index]):
             ROUND_ANSWER_TO_MANUALLY = settings['round'] = 'по умолчанию'
             return f'{f'{q_solve_example(example)} ' * (not recents['rounding info longer'] > 0)}[округление по умолчанию{info_if_start_rounding * (recents['rounding info longer'] > 0)}]'
 
@@ -547,10 +936,7 @@ def solve_example(example=None, get_raw_ans=False):
 
     pre_example = f'({example})'
     
-    for i in range(len(pre_example) - 2):
-        if pre_example[i + 1] == '|':
-            pre_example = pre_example[:i + 1] + 'Uu'[pre_example[i] in '0123456789!)ueπφ' or bool(re.match(r'[+•:^!\)]|mod|div', pre_example[i + 2:]))] + pre_example[i + 2:]
-    example = pre_example[1:-1]
+    example = replace_abs_signs(pre_example[1:-1])
 
     if text_tokens := re.findall(fr'\s*(?:(?:[0-9]*-)?{letters_and_not_example_like_inwords}+[0-9]*{syntax}*|{letters_and_inwords}*{syntax}+)', example):
         for text_token in text_tokens:
@@ -819,7 +1205,7 @@ def solve_example(example=None, get_raw_ans=False):
         if abs(example_for_calculations) > Decimal(10) ** -(ROUND_ANSWER_TO - ROUND_ANSWER_TO_IF_POW) or abs(example_for_calculations) < Decimal(10) ** -300:
             example_for_calculations = example_for_calculations.quantize(Decimal('.' + ROUND_ANSWER_TO * '0'), ROUND_HALF_UP)
         else:
-            log_num = log(abs(example_for_calculations), 10)
+            log_num = math.log(abs(example_for_calculations), 10)
             example_for_calculations = example_for_calculations.quantize(Decimal('.' + (int(-log_num) + ROUND_ANSWER_TO_IF_POW + 1 if type(log_num) in (Decimal, int, float) else ROUND_ANSWER_TO) * '0'), ROUND_HALF_UP)
         if example_for_calculations == 0:
             return '0'
@@ -829,7 +1215,7 @@ def solve_example(example=None, get_raw_ans=False):
             while abs(Decimal(raw_res)) >= Decimal(10) ** 300:
                 raw_res = str(Decimal(raw_res) / Decimal(10) ** 100)
                 fly_exp += 100
-            raw_res_exp1 = Decimal(log(abs(Decimal(raw_res)), 10)).quantize(Decimal('.' + 5 * '0'), ROUND_HALF_UP)
+            raw_res_exp1 = Decimal(math.log(abs(Decimal(raw_res)), 10)).quantize(Decimal('.' + 5 * '0'), ROUND_HALF_UP)
             raw_res_exp1 = raw_res_exp1.quantize(Decimal('0'), ROUND_FLOOR)
             raw_res_exp2 = Decimal(Decimal(raw_res) / Decimal(Decimal(10) ** raw_res_exp1))
             raw_res_exp2 = raw_res_exp2.quantize(Decimal('.' + '0' * (ROUND_ANSWER_TO + 2 if -(ROUND_ANSWER_TO - ROUND_ANSWER_TO_IF_POW) <= raw_res_exp1 <= 0 else ROUND_ANSWER_TO_IF_POW)), ROUND_HALF_UP)
@@ -982,6 +1368,20 @@ def disable_editing_added_win_text(key):
     
 def disable_left_mouse_button_clicking(key):
     return "break"
+
+
+def _mouse_pos():
+    pt = ctypes.wintypes.POINT()
+    user32.GetCursorPos(ctypes.byref(pt))
+    return pt.x, pt.y
+
+def _mouse_move_to(x, y):
+    user32.SetCursorPos(int(x), int(y))
+
+def _mouse_click():
+    # MOUSEEVENTF_LEFTDOWN = 0x0002, MOUSEEVENTF_LEFTUP = 0x0004
+    user32.mouse_event(0x0002, 0, 0, 0, 0)
+    user32.mouse_event(0x0004, 0, 0, 0, 0)
     
     
 def scroll_text(string_shift):
@@ -1021,7 +1421,7 @@ def added_win_control_keypress(event):
     elif keysym == 'n':
         change_history_type()
     elif keysym == 'k':
-        toggle_keyboard(added_win, help_text=help_text, theme=settings['theme'])
+        virtual_keyboard.toggle_keyboard(main_win, help_text=help_text, theme=settings['theme'])
     elif keysym == 'w':
         manage_not_main_window_close()
     elif keysym == 'a':
@@ -1241,7 +1641,7 @@ def shift_info_for_more_comftable_reading(key):
     tape_info_label.place(x=0 if tape_label_width < WIDTH else a if (b := -abs(WIDTH - tape_label_width) - WIDTH // 120) <= (a := (tape_info_label.winfo_x() + WIDTH // 51 * (1, -1)[key.delta < 0])) <= 0 else (b - WIDTH // 120, 0)[a > 0], y=0)
 
 
-def create_tape(tape_type='undo-redo', info_blit='', info_action=None):
+def create_tape(tape_type='undo-redo', info_blit=''):
     global tape, tape_canvas, tape_creation_time, tape_info_label, example_value
     if (not tape or int(tape_canvas.cget('width')) == 0) and tape_type == 'undo-redo':
         if tape and int(tape_canvas.cget('width')) == 0:
@@ -1266,7 +1666,7 @@ def create_tape(tape_type='undo-redo', info_blit='', info_action=None):
         tape_info_label.place(x=0, y=0)
         resize_and_retheme_canvas_drawings()
         tape.bind('<ButtonPress-1>', lambda event: None if not (a := ' – нажми меня, чтобы поменять местами аргументы логарифмов') in info_blit
-                  else (entry_box.delete(0, END), entry_box.insert(END, info_blit.split(' – ')[0]), calculate_result(), pyautogui.moveTo(event.x_root, event.y_root + (-HEIGHT, HEIGHT)[settings['y'] - HEIGHT > 0]), destroy_tape()))
+                  else (entry_box.delete(0, END), entry_box.insert(END, info_blit.split(' – ')[0]), calculate_result(), _mouse_move_to(event.x_root, event.y_root + (-HEIGHT, HEIGHT)[settings['y'] - HEIGHT > 0]), destroy_tape()))
         tape.bind('<Motion>', set_tape_creation_time)
         tape.bind('<Shift-MouseWheel>', shift_info_for_more_comftable_reading)  # для удобного потягивания по тачпаду
         tape.bind('<MouseWheel>', shift_info_for_more_comftable_reading)  # для удобной прокрутки колеса мыши без прожатия shift
@@ -1286,7 +1686,8 @@ def create_tape_base(tape_color):
 
 def destroy_tape():
     global tape, tape_creation_time
-    tape.destroy()
+    if tape:
+        tape.destroy()
     tape = None
     tape_creation_time = 10 ** 100
 
@@ -1377,23 +1778,15 @@ ROUND_ANSWER_TO_IF_POW = 12
 max_rounding = ROUND_ANSWER_TO - 1
 min_rounding = -(24 - 1)
 
-white_or_black = ('white', 'black')[settings['theme'] == 'light']
 main_win = Tk()
-
 main_win.overrideredirect(True) # Убрать заголовок окна
-main_win.wm_attributes('-topmost', 1)  # Сделать окно несворачиваемым при нажатии на другие окна
-main_win.attributes('-alpha', '0.975')
-main_win.resizable(width=False, height=False)
-
-main_win.title('Калькулятор.')
-main_win['bg'] = white_or_black
 
 
 def force_entry_copy(key):
     global indexes_of_selection
     main_win.after(150, lambda: main_win.event_generate('<apostrophe>'))  # минимальное значение в миллисекундах, чтобы прекратить выделение копируемого окна
     return 'break'
-entry_box = Entry(main_win, font=('Arial', HEIGHT // 2), fg=white_or_black, bg=white_or_black, borderwidth=0, insertwidth=1, insertontime=700, insertofftime=500, exportselection=0)
+entry_box = Entry(main_win, font=('Arial', HEIGHT // 2), borderwidth=0, insertwidth=1, insertontime=700, insertofftime=500, exportselection=0)
 entry_box.bind('<Double-Button-1>', force_entry_copy)
 entry_box.insert(END, recents['example before closing'])
 entry_box.icursor(recents['cursor before closing'])
@@ -1402,7 +1795,7 @@ cursor_index = entry_box.index('insert')
 indexes_of_selection = None
 can_backspace = entry_box.index('insert') != 0
 
-result = Entry(main_win, font=('Arial', HEIGHT // 2), fg=white_or_black, bg=white_or_black, borderwidth=0, insertwidth=1, insertontime=700, insertofftime=500, exportselection=0)
+result = Entry(main_win, font=('Arial', HEIGHT // 2), borderwidth=0, insertwidth=1, insertontime=700, insertofftime=500, exportselection=0)
 result.bind('<Double-Button-1>', lambda key: main_win.event_generate('<quotedbl>'))
 change_width_of_entry(recents['example before closing'], entry_box, result)
 example_value = entry_box.get()
@@ -1410,6 +1803,17 @@ example_value = entry_box.get()
 tape_creation_time = 10 ** 100
 tape = None
 create_added_win(None)
+
+close_label = Label(main_win, text='×', font=('Arial', HEIGHT // 3 - 1), padx=0, pady=0, borderwidth=0, highlightthickness=0)
+close_label.place(x=WIDTH - HEIGHT // 3, y=1, width=HEIGHT // 3 - 1, height=HEIGHT // 3 - 1) 
+close_label.bind('<Enter>', lambda key: close_label.config(bg='red'))
+close_label.bind('<Leave>', lambda key: close_label.config(bg=result.cget('bg')))
+
+hide_label = Label(main_win, text='−', font=('Arial', HEIGHT // 3 - 1), padx=0, pady=0, borderwidth=0, highlightthickness=0)
+hide_label.place(x=WIDTH - 2 * HEIGHT // 3 + 1, y=1, width=HEIGHT // 3 - 1, height=HEIGHT // 3 - 1) 
+hide_label.bind('<Enter>', lambda key: hide_label.config(bg=main_win['bg']))
+hide_label.bind('<Leave>', lambda key: hide_label.config(bg=result.cget('bg')))
+
 change_size_of_everything(scale=settings['scale'])
 
 main_win.geometry(f'{WIDTH}x{HEIGHT}+{MIN_X_COORD}+{settings['y']}')
@@ -1421,12 +1825,12 @@ def set_focus_from_not_my_application():
         length = get_text_length(entry_box.get()[:cursor_index], entry_box) + 3
         width_plus_x_coord = WIDTH + MIN_X_COORD
         length_plus_x_coord = length + MIN_X_COORD
-        last_pos = pyautogui.position()
+        last_pos = _mouse_pos()
         x = length_plus_x_coord if length_plus_x_coord < width_plus_x_coord - 5 else width_plus_x_coord - 5
         y = settings['y'] + HEIGHT // 2
-        pyautogui.moveTo(x, y)
-        pyautogui.click()
-        pyautogui.moveTo(*last_pos)
+        _mouse_move_to(x, y)
+        _mouse_click()
+        _mouse_move_to(*last_pos)
         
         
 def set_keyboard_layout_memory():
@@ -1434,10 +1838,21 @@ def set_keyboard_layout_memory():
     keyboard_layout_memory = ('en', 'ru')[not is_russian_layout()]
 
 
-keyboard.add_hotkey('ctrl+space', set_focus_from_not_my_application)
-keyboard.add_hotkey('alt+space', set_focus_from_not_my_application)
-keyboard.add_hotkey('shift+alt', set_keyboard_layout_memory)
-keyboard.add_hotkey('win+space', set_keyboard_layout_memory)
+def add_hotkeys_from_other_wins_and_import():
+    global pyperclip, virtual_keyboard
+    import virtual_keyboard
+    import pyperclip  # тоже самое
+    import keyboard  # дохрена жрёт
+    keyboard.add_hotkey('ctrl+space', set_focus_from_not_my_application)
+    keyboard.add_hotkey('alt+space', set_focus_from_not_my_application)
+    keyboard.add_hotkey('shift+alt', set_keyboard_layout_memory)
+    keyboard.add_hotkey('win+space', set_keyboard_layout_memory)
+    main_win.wm_attributes('-topmost', 1)  # Сделать окно несворачиваемым при нажатии на другие окна
+    main_win.attributes('-alpha', '0.975')
+    main_win.title('Калькулятор.')
+
+
+main_win.after(200, add_hotkeys_from_other_wins_and_import)
 
 
 def matching_when_cursor_on_regex(left_regex, right_regex):
@@ -1523,7 +1938,8 @@ def delete_to_the(k):
         pre_length = -len(re.search(fr'(?:\S|{fr'\^\s*{'ujUJ'.index(last_keys_not_having_keytype_changed[-1]) + 2}\s*|' if last_keys_not_having_keytype_changed[-1] in 'ujUJ' else ''}' + 
                                     fr'{r'(?:\S|(?:(?<!^)1\s*)?/\s*2\s*)|' if last_keys_not_having_keytype_changed[-1] == 'h' else ''}' + 
                                     fr'{fr'•?\s*[Ee](?:\s*-)?\s*(?:{(3, 6, 9, 12, 15)['kMBTQkm'.index(last_keys_not_having_keytype_changed[-1]) % 5]})\s*|' if last_keys_not_having_keytype_changed[-1] in 'kMBTQkm' else ''}' +
-                                    fr'{r'1\s*[+/]|[01]\s*\.|' * add_0_point_1_slash}' + fr'{r'2\s*[+•^/]|' * special_cases_2plus}' + 
+                                    fr'{r'1\s*[+/]|[01]\s*\.|' * bool(add_0_point_1_slash and re.match(r'\s*(?:$|\))', example_value[cursor_index:]))}' +
+                                    fr'{r'2\s*[+•^/]|' * bool(special_cases_2plus and re.match(r'\s*(?:$|\))', example_value[cursor_index:]))}' + 
                                     fr'(?<=π)\s*/\s*\d|(?<=[φ)])\s*(?:/\s*(?:\d|0\.)|•\s*1\.)|(?<=[e!])\s*•\s*(?:\d|[01]\.)|(?<=[\d.πφe])\s*•\s*[πφe]|^)\s*$', example_value[:cursor_index])[0])
 
         past_length = len(re.match(fr'\s*(?:\S|$)', example_value[cursor_index:])[0])
@@ -1542,12 +1958,7 @@ def add_to_recents(value):
 
 
 def clean_from_scopes_with_emptyness(value):
-    value = f'({value})'
-    for i in range(len(value) - 2):
-        if value[i + 1] == '|':
-            value = value[:i + 1] + 'Uu'[value[i] in '0123456789!)ueπφE' or bool(re.match(r'[+•:^!\)]|mod|div', value[i + 2:]))] + value[i + 2:]
-            
-    value = value[1:-1]
+    value = replace_abs_signs(value)
     value = clean_pattern_empty_scopes(value)
     value = re.sub(r'[Uu]', '|', value)
     value = re.sub(r'(?:[\+\-•:^,]|mod|div)(?=\))', r'', f'({value})')[1:-1]
@@ -1621,7 +2032,6 @@ def insertion_if_division_of_one(left_symbol, arg, example, destroy_nearby_scope
     const_condition = re.search(fr'({re.escape(arg)}\s*)$', example[:cursor_index])
     if re.search(r'[φπe]', arg) and const_to_pow_condition:
         example = delete_in_example(example, -len(const_to_pow_condition[2]) - len(const_to_pow_condition[3]) - len(const_to_pow_condition[4]))
-        print(const_to_pow_condition[3].replace(' ', ''))
         example = insert_in_example(example, const_to_pow_condition[2] + str(Decimal(const_to_pow_condition[3].replace(' ', '')) + 1) + const_to_pow_condition[4])
         return example
     elif re.search(r'[φπe]', arg) and const_condition:
@@ -1644,8 +2054,6 @@ def insertion_if_division_of_one(left_symbol, arg, example, destroy_nearby_scope
         return (insert_in_example, destroy_nearby_bracks)[destroy_nearby_scopes](example, f'{'•' if left_symbol in '0123456789φπevEထ)!' and not re.search(r'div$', exampled_value(example)) else ''}{arg}')
 
 
-import ctypes
-
 def set_window_theme_border(window, is_dark_theme):
     """
     Принудительно делает системную рамку окна темной или светлой (Windows 10/11).
@@ -1654,7 +2062,7 @@ def set_window_theme_border(window, is_dark_theme):
     
     # Получаем HWND (дескриптор окна)
     try:
-        hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+        hwnd = user32.GetParent(window.winfo_id())
     except:
         return
         
@@ -1674,10 +2082,26 @@ def set_window_theme_border(window, is_dark_theme):
 
 
 def close_main_win_with_layout_switching(*key):
-    close_main_win()
-    if not is_russian_layout() and keyboard_layout_memory == 'ru':
-        hwnd = user32.GetForegroundWindow()
-        user32.PostMessageW(hwnd, 0x50, 0, user32.LoadKeyboardLayoutW("00000419", 0x1))
+    if virtual_keyboard._vkb and not virtual_keyboard._vkb.destroyed and virtual_keyboard._vkb.visible:
+        virtual_keyboard.delete_keyboard()
+    else:
+        close_main_win()
+        if not is_russian_layout() and keyboard_layout_memory == 'ru':
+            hwnd = user32.GetForegroundWindow()
+            user32.PostMessageW(hwnd, 0x50, 0, user32.LoadKeyboardLayoutW("00000419", 0x1))
+
+
+def auto_change_size_of_everything(key=None, size_definition=True):
+    change_size_of_everything(**(({'scale': 0} if (key.y_root in (*range(3), *range(MAX_LOW_COORD + TASKBAR_HEIGHT // 2, screen_height)), HEIGHT > screen_width // 180)[size_definition]
+                                  else {'scale': settings['scale'], 'scale_was_zero': True}) | {'change_result': False}))
+
+
+def change_text_size(increase):
+    change_size_of_everything(scale=(max(settings['scale'] - 1, 1), min(settings['scale'] + 1, 5))[increase], scale_was_zero=HEIGHT <= screen_width // 180)
+
+
+close_label.bind('<ButtonPress-1>', close_main_win_with_layout_switching)
+hide_label.bind('<ButtonPress-1>', auto_change_size_of_everything)
 
 
 def symbol_left_from_cursor():
@@ -1769,8 +2193,10 @@ def manage_key_event(key, just_from_added_win=False):
         if (symbol_left_from_cursor() == '.' and (len(keysym) == 1 and keysym in 'sctlngpefraodmxbivyujwIkMBTQPEUJCF' or keysym in keys_after_dot)):
             example_value = insert_in_example(example_value, '5')
         if keysym == 'BackSpace':
-            for i in reunite(united_symbols):
-                if (i_got_pattern := re.search(fr'{i}\s*$', example_value[:cursor_index])) and not (re.search(fr'log\s*$', example_value[:cursor_index]) and re.match(fr'\s*by', example_value[cursor_index:])):
+            greedy_deletion = tuple(f'{k}{j}' for j in ('(', '|') for k in ('sin', 'cos', 'ctg', 'tg'))
+            for i in reunite(greedy_deletion + united_symbols):
+                if (((i_got_pattern := re.search(fr'{i}\s*$', example_value[:cursor_index])) and (i not in reunite(greedy_deletion) or re.fullmatch(r'\s*', example_value[cursor_index:])))
+                    and not (re.search(fr'log\s*$', example_value[:cursor_index]) and re.match(fr'\s*by', example_value[cursor_index:]))):
                     example_value = delete_in_example(example_value, -len(i_got_pattern[0]))
                     break
             else:
@@ -2656,6 +3082,14 @@ def set_main_focus(event):
 
     if not is_selected:
         add_to_last_examples_if_selection_or_cursor_change()
+
+
+def replace_abs_signs(val):
+    val = f'({val})'
+    for i in range(len(val) - 2):
+        if val[i + 1] == '|':
+            val = val[:i + 1] + 'Uu'[val[i] in '0123456789!)uπφeE' or bool(re.match(r'[+•/^!\)]|mod|div', val[i + 2:]))] + val[i + 2:]
+    return val[1:-1]
     
 
 cursor_shift_intermediate_steps_at_del_mode = []
@@ -2947,11 +3381,7 @@ def paste_text(*key):
                 insert_in_example(example_value, '•10^' if symbol_left_from_cursor() in '0123456789φπeထ)!' else '1•10^' if symbol_left_from_cursor() in '^√' else '10^')
 
                 if i == f'|{i[1:-1]}|':  # допустим максимум 2-й уровень вложенности, чтобы зрение читателя не запуталось, иначе обернётся в скобки, подсказывая ему, как правильно поступить
-                    value = f'({i})'
-                    for j in range(len(value) - 2): # i уже занято
-                        if value[j + 1] == '|':
-                            value = value[:j + 1] + 'Uu'[value[j] in '0123456789!)ueπφE' or bool(re.match(r'[+•:^!\)]|mod|div', value[j + 2:]))] + value[j + 2:]
-                    value = value[1:-1]
+                    value = replace_abs_signs(value)
                     replaced_paste[index1][index2] = (f'({i})', i)[re.fullmatch(r'U(?:Uu)*u', re.sub(r'[^Uu]', '', value)) is not None]
                 else:
                     replaced_paste[index1][index2] = (f'({i})', i)[re.fullmatch(fr'{num_construct}|\(-?{num_construct}\)', i) is not None]
@@ -3117,7 +3547,7 @@ def on_freeing_left_button(event):
         indexes_of_selection, cursor_index = None, recents['cursor before moving calc']
         entry_box.select_range(*[cursor_index for _ in range(2)])
         entry_box.icursor(cursor_index)
-        pyautogui.hotkey('shift', '4')
+        main_win.event_generate('<dollar>')
         change_selection_colors_to_normal(settings['theme'] == 'light')
     set_main_focus(event)
     recents['cursor before moving calc'] = entry_box.index('insert')
@@ -3148,7 +3578,8 @@ def move_main_win(event):
     entry_box.focus_set()
     beauty_letter_tape.wm_attributes('-topmost', 1)
     result.delete(0, END)
-    result.insert(END, f'{' ' * bool(entry_box.get())}y={f'{y_coord}🠕'.ljust(len(str(MAX_COORD)) + 1)}  –{MAX_COORD - y_coord}🠗 (пара значений y="пикселей от верха"  –"низа")')
+    # стрелки не из ascii дофига жрут (1200 мс), так что теперь из ascii
+    result.insert(END, f'{' ' * bool(entry_box.get())}y={f'{y_coord}↑'.ljust(len(str(MAX_COORD)) + 1)}  –{MAX_COORD - y_coord}↓ (пара значений y="пикселей от верха"  –"низа")')
     if tape: resize_and_retheme_canvas_drawings()
 
 
@@ -3185,7 +3616,7 @@ def move_added_win_scrolling_horizontally(event):
     setting_x(x_coord)
     
     added_win.geometry(f'{added_win.winfo_width()}x{MAX_COORD - 2 * TASKBAR_HEIGHT}+{x_coord}+0')
-    pyautogui.moveTo(event.x_root + x_coord_diff, event.y_root)
+    _mouse_move_to(event.x_root + x_coord_diff, event.y_root)
     
     
 def has_selection():
@@ -3322,14 +3753,14 @@ def rank_text(key=None):
 def change_history_type(*key):
     settings['history type'] = ('notes', 'history')[settings['history type'] == 'notes']
     result.insert(END, f' автосохранение примеров {('вкл', 'откл')[settings['history type'] == 'notes']}ючено')
-    main_win.after(1000, lambda: calculate_result())
+    main_win.after(1000, calculate_result)
 
 
 for val, func in {'a': select_all, 'c': copy_text, 'x': cut_text, 'v': paste_text, 'y': ctrl_y, 'z': ctrl_z,
                   's': lambda key: save_example_to_history(example_to_save=entry_box.get()), 'w': close_main_win_with_layout_switching,
                   'h': lambda key: create_added_win('h'), 'f': rank_text, **{i: (lambda key: main_win.event_generate('<question>')) for i in ('q', 'i')},
                   'l': lambda key: change_size_of_everything(1), 'm': lambda key: change_size_of_everything(3), 'b': lambda key: change_size_of_everything(5),
-                  **{i: move_to_edges for i in 'eud'}, 'k': lambda key: toggle_keyboard(main_win, help_text=help_text, theme=settings['theme']),
+                  **{i: move_to_edges for i in 'eud'}, 'k': lambda key: virtual_keyboard.toggle_keyboard(main_win, help_text=help_text, theme=settings['theme']),
                   'n': change_history_type}.items():
     for key in (val, val.upper()):
         main_win.bind(f'<Control-{key}>', func)
@@ -3345,15 +3776,12 @@ def manage_all_of_that_right_button_shit(key):
 main_win.bind('<ButtonPress-3>', manage_all_of_that_right_button_shit)
         
         
-def ctrl_backspace(key):
-    (change_text('', define_future_of_cursor('left'), cursor_index) if not has_selection() else cut_text(key))
+def ctrl_backspace(key, no_cut=False):
+    (change_text('', define_future_of_cursor('left'), cursor_index) if not has_selection() or no_cut else cut_text(key))
     
 def ctrl_delete(key):
     (change_text('', cursor_index, define_future_of_cursor('right')) if not has_selection() else cut_text(key))
 
-def tab(key):
-    pyautogui.hotkey('Alt', 'Tab')
-    return 'break'
     
 main_win.bind('<Shift-Up>', lambda key: set_cursor_shift_to_the_edge(key, 'start'))
 main_win.bind('<Shift-Down>', lambda key: set_cursor_shift_to_the_edge(key, 'end'))
@@ -3373,16 +3801,13 @@ main_win.bind('<Control-Shift-Y>', ctrl_shift_y)
 main_win.bind('<Control-Shift-Z>', ctrl_shift_z)
 main_win.bind('?', lambda key: create_added_win('?'))
 main_win.bind('<Control-slash>', lambda key: create_added_win('?'))
-# main_win.bind('<Control-space>', lambda key: (pyautogui.hotkey('Alt', 'Tab'), time.sleep(0.1), pyautogui.press('Enter')))
-# main_win.bind('<Alt-space>', lambda key: pyautogui.hotkey('Alt', 'Tab'))
-# main_win.bind('<Tab>', lambda key: tab)
 
 
 def press_tape_by_keyboard(key):
     if tape and int(tape_canvas.cget('width')) == 0 and 'нажми меня' in tape_info_label.cget('text'):
-        pyautogui.moveTo(key.x_root, settings['y'] + HEIGHT // 2 + (HEIGHT, -HEIGHT)[settings['y'] - HEIGHT > 0])
-        pyautogui.click()
-        main_win.after(50, lambda: pyautogui.moveTo(key.x_root, key.y_root))
+        _mouse_move_to(key.x_root, settings['y'] + HEIGHT // 2 + (HEIGHT, -HEIGHT)[settings['y'] - HEIGHT > 0])
+        _mouse_click()
+        main_win.after(50, lambda: _mouse_move_to(key.x_root, key.y_root))
     return 'break'
 
 
@@ -3478,14 +3903,6 @@ main_win.bind('<Alt-Key>', lambda key: None)
 main_win.bind('<Key>', lambda key: supermanage_key_event(key, True))
 
 
-def auto_change_size_of_everything(key=None, size_definition=True):
-    change_size_of_everything(**(({'scale': 0} if (key.y_root in (*range(3), *range(MAX_LOW_COORD + TASKBAR_HEIGHT // 2, screen_height)), HEIGHT > screen_width // 180)[size_definition]
-                                  else {'scale': settings['scale'], 'scale_was_zero': True}) | {'change_result': False}))
-
-
-def change_text_size(increase):
-    change_size_of_everything(scale=(max(settings['scale'] - 1, 1), min(settings['scale'] + 1, 5))[increase], scale_was_zero=HEIGHT <= screen_width // 180)
-
 main_win.bind('<Control-equal>', lambda key: change_text_size(increase=True))
 main_win.bind('<Control-minus>', lambda key: change_text_size(increase=False))
 main_win.bind('<Control-Up>', move_up)
@@ -3522,14 +3939,18 @@ def focus_in(event):
         hwnd = user32.GetForegroundWindow()
         user32.PostMessageW(hwnd, 0x50, 0, user32.LoadKeyboardLayoutW("00000409", 0x1))
     main_win['bg'] = ('#' + '51' * 3, '#' + 'a0' * 3)[settings['theme'] == 'light']
+
+    close_label.config(fg=entry_box.cget('fg'), bg=result.cget('bg'))
+    hide_label.config(fg=entry_box.cget('fg'), bg=result.cget('bg'))
+
     entry_box.config(bg=('#' + '27' * 3, '#' + 'e2' * 3)[settings['theme'] == 'light'])
     result.config(bg=entry_box.cget('bg'))
     change_size_of_everything(scale=settings['scale'], scale_was_zero=True, change_result=False)
     config_fg_and_insertbackground()
     if added_win.focus_displayof() is not None:
-        main_win.after(50, blink_fake_cursor(None))
+        main_win.after(50, lambda: blink_fake_cursor(None))
     if added_win.title() == 'инструкция':   
-        main_win.after(50, text_entry.yview(top_text_index))
+        main_win.after(50, lambda: text_entry.yview(top_text_index))
         text_entry.mark_set(INSERT, current_text_index)
         if has_selection:
             text_entry.tag_add("sel", sel_start, sel_end)
@@ -3574,11 +3995,11 @@ def is_window_ghost(window):
             return False
             
         # Получаем системный дескриптор окна (HWND)
-        hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+        hwnd = user32.GetParent(window.winfo_id())
         
         GWL_EXSTYLE = -20
         # Считываем текущие системные флаги окна
-        current_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        current_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
         
         # Проверяем наличие флага WS_EX_TRANSPARENT (0x20) с помощью побитового "И" (&)
         # Если результат не равен 0, значит флаг установлен
@@ -3591,30 +4012,30 @@ def make_window_ghost(window):
     """Делает окно полностью неосязаемым для курсора мыши"""
     try:
         # Получаем системный идентификатор окна (HWND) в Windows
-        hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+        hwnd = user32.GetParent(window.winfo_id())
         
         # Получаем текущие расширенные стили окна
         GWL_EXSTYLE = -20
-        old_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        old_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
         
         # WS_EX_LAYERED (0x80000) + WS_EX_TRANSPARENT (0x20)
         # Этот набор флагов заставляет Windows игнорировать координаты мыши на этом окне
         new_style = old_style | 0x80000 | 0x20
         
-        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
+        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
     except:
         pass
 
 def make_window_normal(window):
     """Возвращает окну нормальное осязание мыши"""
     try:
-        hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+        hwnd = user32.GetParent(window.winfo_id())
         GWL_EXSTYLE = -20
-        old_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        old_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
         
         # Отключаем флаг прозрачности для мыши
         new_style = old_style & ~0x20
-        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
+        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
     except:
         pass
 
@@ -3626,10 +4047,10 @@ WS_EX_LAYERED = 0x00080000
 def make_click_through(window):
     """Этот хак заставляет Windows пропускать клики вашей мыши сквозь окно"""
     window.update() # Сначала принудительно обновляем окно, чтобы ОС выдала ему ID
-    hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
-    old_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+    hwnd = user32.GetParent(window.winfo_id())
+    old_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
     new_style = old_style | WS_EX_TRANSPARENT | WS_EX_LAYERED
-    ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
+    user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
 
 
 main_win.bind('<FocusOut>', focus_out)
@@ -3670,7 +4091,8 @@ def config_fg_and_insertbackground():
         
 
 def change_theme(event):
-    global tape
+    global tape, beauty_letter_tape, beauty_letter_tape_canvas, coord_x_beauty_shift, last_time_main_win_were_focused, space_initialized
+    global space_bg_stars, space_bright_stars, space_meteors
     theme_is_light = settings['theme'] == 'light'
     settings['theme'] = ('light', 'dark')[theme_is_light]
     
@@ -3683,6 +4105,7 @@ def change_theme(event):
     
     selected = recents['last examples'][-1][4]
     focus_in(event)
+    virtual_keyboard.recreate_keyboard(settings['theme'])
     create_added_win((None, 'h', '?')[(added_win.title() == 'история') + (added_win.title() == 'инструкция') * 2])
     
     # Важно для не смены курсора и самого примера
@@ -3696,6 +4119,11 @@ def change_theme(event):
     
     if not (added_win_in_focus or text_entry_in_focus):
         entry_box.focus_set()
+        if not beauty_letter_tape:
+            beauty_letter_tape = Toplevel()
+            beauty_letter_tape.overrideredirect(True)
+            beauty_letter_tape_canvas = Canvas(beauty_letter_tape, bg=result.cget('bg'), borderwidth=0, highlightthickness=0)
+            beauty_letter_tape_canvas.pack(fill="both", expand=True)
         beauty_letter_tape.wm_attributes('-topmost', 1)
     else:
         text_entry.yview_moveto(scroll_pos)
@@ -3709,7 +4137,8 @@ def change_theme(event):
 
         if added_win.title() != invisible_win_title: set_window_theme_border(window=added_win, is_dark_theme=settings['theme'] == 'dark')
     if tape: resize_and_retheme_canvas_drawings()
-    recreate_keyboard(settings['theme'])
+    close_label.config(fg=entry_box.cget('fg'), bg=result.cget('bg'))
+    hide_label.config(fg=entry_box.cget('fg'), bg=result.cget('bg'))
         
         
 def unbind_left_button():
@@ -3735,7 +4164,6 @@ def check_theme_or_geometry_change():
             set_focus_from_not_my_application()
             change_theme(None)
             main_win.event_generate('<Control-space>')
-            pyautogui.hotkey('ctrl', 'space')
     res_val, entry_val = result.get(), entry_box.get()
 
     curr_time = time.time()
@@ -3747,19 +4175,22 @@ def check_theme_or_geometry_change():
     if curr_time - last_time_main_win_geometry_change > 1 and re.search(calc_geometry_state_change_expression, res_val):
         result.delete(0, END)
         result.insert(END, val_before_last_main_win_geometry_change)
-    elif curr_time - last_time_round_change > (10 if recents['rounding info longer'] > 0 else 0.8) and 'q' in entry_val:
+    elif curr_time - last_time_round_change > (10 if recents['rounding info longer'] > 0 else 0.75) and 'q' in entry_val:
         if recents['rounding info longer'] > 0:
             recents['rounding info longer'] -= 1
         if has_selection():
             main_win.event_generate('<Right>' if cursor_index == get_selection()['start'] else '<Left>')
         if 'q' in entry_val and main_win.focus_get() == entry_box:
-            pyautogui.hotkey('ctrl', 'backspace')
+            ctrl_backspace('', no_cut=True)
             main_win.after(20, unbind_left_button)
             example_value = entry_box.get()
+    elif bool(tape) and int(tape_canvas.cget('width')) == 0 and 'абсолютно любое окно закрывают esc и ctrl+w' in tape_info_label.cget('text'):
+        if curr_time - tape_creation_time > 15:
+            destroy_tape()
     elif curr_time - tape_creation_time > (1.5, 5)[bool(tape) and int(tape_canvas.cget('width')) == 0 and ' – нажми меня, чтобы поменять местами аргументы логарифмов' in tape_info_label.cget('text')]:
         destroy_tape()
 
-    main_win.after(50, check_theme_or_geometry_change)  # проверять каждую двадцатую секунды
+    main_win.after((50, 30)[0.49 < curr_time - last_time_round_change < 0.51], check_theme_or_geometry_change)  # проверять каждую двадцатую секунды
 last_theme = is_dark_theme()
 check_theme_or_geometry_change()
         
@@ -3892,11 +4323,6 @@ def increment_hex_color(hex_str):
 # ==============================================================================
 last_time_main_win_were_focused = time.time()
 
-def destroy_beauty_letter_tape():
-    global coord_x_beauty_shift, space_initialized, space_bg_stars, space_bright_stars, space_meteors
-    coord_x_beauty_shift = -WIDTH // 5
-    space_initialized = False 
-
 
 def animate_light_letters():
     global beauty_letter_tape, beauty_letter_tape_canvas, coord_x_beauty_shift, last_time_main_win_were_focused, space_initialized
@@ -3910,7 +4336,7 @@ def animate_light_letters():
         beauty_letter_tape_canvas = Canvas(beauty_letter_tape, bg=result.cget('bg'), borderwidth=0, highlightthickness=0)
         beauty_letter_tape_canvas.pack(fill="both", expand=True)
 
-    # Условие активности пользователя (120 секунд ещё не прошло)
+    # Условие активности пользователя (180 секунд ещё не прошло)
     if result.winfo_height() != HEIGHT or time.time() < last_time_main_win_were_focused + 180:
         beauty_letter_tape.attributes('-alpha', '0')
         if result.winfo_height() != HEIGHT:
@@ -4066,11 +4492,12 @@ if time.time() - recents['closing time'][-3] < 14 * DAY:
     change_greeting()
     animate_light_letters()
     main_win.after(100, lambda: beauty_letter_tape.wm_attributes('-topmost', 1))
+else:
+    create_tape('info', 'абсолютно любое окно закрывают esc и ctrl+w, клавиатуру-помощника откроет/закроет ctrl+k')
     
 
 main_win.bind('<Control-t>', change_theme)
 main_win.bind('<Control-T>', change_theme)
 
 calculate_result()
-
 main_win.mainloop()

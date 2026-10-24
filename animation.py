@@ -285,7 +285,7 @@ class ElegantGalacticTransform:
             for pt in self.topo.core_particles: self.canvas.itemconfigure(pt["id"], state="hidden")
             
             # Ожидание перед закрытием перенесено в окончание анимации вспышки
-            self.root.after(800, lambda: self.blink_logo(step=0))
+            self.root.after(600, lambda: self.blink_logo(step=0))
             return
 
         if progress < 1.0: self.root.after(180, self.animate)
@@ -293,13 +293,13 @@ class ElegantGalacticTransform:
     def blink_logo(self, step):
         logo_elements = [self.logo_circle, self.logo_bar1, self.logo_bar2]
         if step == 0:
-            self.root.after(650, lambda: self.blink_logo(1))
+            self.root.after(0, lambda: self.blink_logo(1))
         elif step == 1:
             for el in logo_elements: self.canvas.itemconfigure(el, state="hidden")
             self.root.after(50, lambda: self.blink_logo(2))
         elif step == 2:
             for el in logo_elements: self.canvas.itemconfigure(el, state="normal")
-            self.root.after(450, self.root.destroy)
+            self.root.after(350, self.root.destroy)
 
 root = tk.Tk()
 app = ElegantGalacticTransform(root)
