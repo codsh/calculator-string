@@ -1,10 +1,6 @@
 # ==========================================
 # ЧАСТЬ 1: Математическая модель и генерация галактики
 # ==========================================
-import tkinter as tk
-import random
-import math
-
 class GalaxyTopology:
     def __init__(self, scale, cx, cy):
         self.scale = scale
@@ -103,7 +99,7 @@ class ElegantGalacticTransform:
         y_pos = (sh - self.base_size) // 2
         root.geometry(f"{self.base_size}x{self.base_size}+{x_pos}+{y_pos}")
         
-        self.canvas = tk.Canvas(root, width=self.base_size, height=self.base_size, bg="#00FF00", highlightthickness=0)
+        self.canvas = Canvas(root, width=self.base_size, height=self.base_size, bg="#00FF00", highlightthickness=0)
         self.canvas.pack()
         
         self.scale = self.base_size / 600.0
@@ -301,6 +297,6 @@ class ElegantGalacticTransform:
             for el in logo_elements: self.canvas.itemconfigure(el, state="normal")
             self.root.after(350, self.root.destroy)
 
-root = tk.Tk()
+root = Tk()
 app = ElegantGalacticTransform(root)
 root.mainloop()
