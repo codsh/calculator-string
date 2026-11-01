@@ -1,36 +1,8 @@
 """
 virtual_keyboard.py — экранная клавиатура-шпаргалка для строки-калькулятора.
-
-Вместо букв на клавишах — слова-подсказки, которые берутся из help_text (info.help_text
-или help.txt рядом со скриптом). Буква клавиши в слове выделена жирным; если её в слове
-нет (x^2, умножение, история ...), подпись клавиши стоит слева от слова.
-
-• Цвета — серые тона, подсказки яркие, фон плотный (alpha по умолчанию 0.85).
-• Скруглены рамки клавиш; окно пропускает клики мыши.
-• Размеры считаются от рабочей области экрана.
-• Перенос слов: если подсказка не влезает в клавишу, она переносится на 2-3 строки,
-  шрифт уменьшается только когда ни один вариант переноса не помог.
-• Слои: зажми Shift — подсказки больших букв, зажми Ctrl — подсказки ctrl+клавиша.
-  Нажатая клавиша подсвечивается.
-
-Привязка в calculator.py (ты привязываешь сам):
-
-    from virtual_keyboard import create_keyboard, delete_keyboard, toggle_keyboard
-
-    toggle = lambda e: toggle_keyboard(main_win, help_text=help_text,
-                                       theme=lambda: settings['theme'])
-    main_win.bind('<Control-k>', toggle)
-    entry.bind('<Control-k>', toggle)   # у Entry/Text своя реакция на Ctrl+K — перебиваем её
-
-Функции:
-    create_keyboard(master, help_text=None, **kwargs)  — создать и показать
-    delete_keyboard()                                  — удалить
-    toggle_keyboard(master, help_text=None, **kwargs)  — чередует создание/удаление
-
-Отдельный запуск (Ctrl+K — показать/скрыть, Ctrl+Alt+Q — закрыть):
-    python virtual_keyboard.py [--theme dark|light] [--alpha 0.85]
 """
 import itertools
+import math
 import re
 import sys
 import ctypes
@@ -39,18 +11,18 @@ from pathlib import Path
 from tkinter import Tk, Toplevel, Canvas, TclError, font as tkfont
 
 
-# ==============================================================================
-# ПАЛИТРА — серые тона, подсказки яркие
-# ==============================================================================
 def get_palette(theme_is_light):
     pick = lambda dark, light: light if theme_is_light else dark
     return {
-        'panel_bg': pick('#101010', '#f2f2f2'),  # фон панели
-        'win_bg': pick('#262626', '#dcdcdc'),    # фон клавиш
-        'fg': pick('#ffffff', '#000000'),        # акцент (выделенная буква)
-        'sel': pick('#505050', '#b0b0b0'),       # фон выделения
-        'thumb': pick('#a0a0a0', '#666666'),     # рамка нажатой клавиши
-        'help': {                                # оттенки серого, заметно ярче
+        'panel_bg': pick('#101010', '#f2f2f2'),
+        'win_bg': pick('#262626', '#dcdcdc'),
+        'fg': pick('#ffffff', '#000000'),
+        'sel': pick('#505050', '#b0b0b0'),
+        'thumb': pick('#a0a0a0', '#666666'),
+        'btn_fg': pick('#c8c8c8', '#444444'),
+        'close_hover': '#e81123',
+        'close_icon': '#ffffff',
+        'help': {
             'black': pick('#f0f0f0', '#1f1f1f'),
             'green': pick('#e0e0e0', '#2e2e2e'),
             'blue': pick('#d2d2d2', '#3d3d3d'),
@@ -64,14 +36,10 @@ HELP_COLOR_ORDER = ('black',) * 4 + ('blue', 'green', 'gray') + ('red',) * 4
 
 
 def help_line_color_name(lines, i):
-    """Имя цвета строки i справки — та же логика, что в finish_to_help_win()."""
     tag_rows = (3, 4) + tuple(n + 1 for n, line in enumerate(lines) if not line)
     return HELP_COLOR_ORDER[min(sum(i >= el for el in tag_rows), len(HELP_COLOR_ORDER) - 1)]
 
 
-# ==============================================================================
-# ПОДСКАЗКИ: клавиша -> (регулярка со словом из справки в группе 1, запасное слово)
-# ==============================================================================
 HINTS = {
     'normal': {
         'q': (r'(Quantize)', 'quantize округлить'),
@@ -197,19 +165,17 @@ def rounded_rect(canvas, x1, y1, x2, y2, r, **kw):
     return canvas.create_polygon(pts, smooth=True, splinesteps=24, **kw)
 
 
-# ==============================================================================
-# КЛАВИАТУРА
-# ==============================================================================
 class VirtualKeyboard:
     ROWS = ('qwertyuiop', 'asdfghjkl', 'zxcvbnm')
     ROW_OFFSETS = (0.0, 0.25, 0.75)
     KEY_ASPECT = 1.6
-    PAD, GAP = 0.16, 0.09
+    PAD, GAP = 0.08, 0.09
     WIDTH_FRACTION = 0.9
     HEIGHT_FRACTION = 0.5
     FONT_FAMILY = 'Arial'
     COLOR_KEY = '#ff00ff'
     TICK_MS = 40
+    MOUSE_MS = 15
     BIG_SCALE = 1.3
     NOTES = {('normal', 'p'): ' π', ('normal', 'i'): ' φ',
              ('shift', 'p'): ' φ', ('shift', 'f'): ' φ'}
@@ -242,10 +208,18 @@ class VirtualKeyboard:
         self.u32 = self._load_user32()
         self.layer, self.pressed, self.fonts = 'normal', set(), {}
         self.key_ids, self.visible, self.destroyed, self.job = {}, False, False, None
+        self.hover, self.mouse_job = None, None
+        self.buttons, self.btn_items, self._pass_clicks = {}, {}, True
         self.theme_name, self.screen_sig = self._current_theme(), None
+        self.canvas.bind('<Button-1>', self._on_click)
+        if not self.u32:
+            self.canvas.bind('<Motion>', lambda e: self._set_hover(self._hit_button(e.x, e.y)))
+            self.canvas.bind('<Leave>', lambda e: self._set_hover(None))
         self.rebuild()
         self._apply_window_styles()
         self.job = self.win.after(self.TICK_MS, self._tick)
+        if self.u32:
+            self.mouse_job = self.win.after(self.MOUSE_MS, self._mouse_tick)
 
     @staticmethod
     def _load_user32():
@@ -260,6 +234,7 @@ class VirtualKeyboard:
             u32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_long]
             u32.SetWindowLongW.restype = ctypes.c_long
             u32.SystemParametersInfoW.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p, ctypes.c_uint]
+            u32.GetCursorPos.argtypes, u32.GetCursorPos.restype = [ctypes.POINTER(wintypes.POINT)], wintypes.BOOL
             return u32
         except Exception:
             return None
@@ -275,8 +250,10 @@ class VirtualKeyboard:
             hwnd = self.u32.GetParent(self.win.winfo_id())
             style = self.u32.GetWindowLongW(hwnd, -20)
             style |= 0x00080000 | 0x08000000 | 0x00000080
-            if self.click_through:
+            if self.click_through and self._pass_clicks:
                 style |= 0x00000020
+            else:
+                style &= ~0x00000020
             self.u32.SetWindowLongW(hwnd, -20, style)
         except Exception:
             pass
@@ -309,11 +286,13 @@ class VirtualKeyboard:
         key_h = max(14, int(min(area_w * self.WIDTH_FRACTION / units_w, area_h * self.HEIGHT_FRACTION / units_h)))
         key_w, gap, pad = int(key_h * self.KEY_ASPECT), max(2, round(key_h * self.GAP)), max(4, round(key_h * self.PAD))
         key_r = round(key_h * 0.24)
+        btn = max(12, round(key_h * 0.40))
         panel_w = 2 * pad + cols * key_w + (cols - 1) * gap
         panel_h = 2 * pad + rows * key_h + (rows - 1) * gap
         free = round(area_h * self.margin)
         y = {'top': top + free, 'center': top + (area_h - panel_h) // 2}.get(self.anchor, bottom - panel_h - free)
         return {'key_w': key_w, 'key_h': key_h, 'gap': gap, 'pad': pad, 'key_r': key_r,
+                'btn': btn,
                 'panel_r': key_r + pad,
                 'key_line': max(1, round(key_h / 150)),
                 'font_px': round(key_h * 0.34), 'font_min': max(8, round(key_h * 0.18)),
@@ -332,20 +311,105 @@ class VirtualKeyboard:
         self.m = self._compute_metrics()
         self.screen_sig = self.m['sig']
         m, pal = self.m, self.pal
+        self.hover = None
 
-        self.win.geometry(f"{m['w']}x{m['h']}+{m['x']}+{m['y']}")
-        self.canvas.config(width=m['w'], height=m['h'], bg=self.COLOR_KEY if self.has_colorkey else pal['win_bg'])
+        w, h = m['w'], m['h']
+        self.win.geometry(f"{w}x{h}+{m['x']}+{m['y']}")
+        self.canvas.config(width=w, height=h, bg=self.COLOR_KEY if self.has_colorkey else pal['win_bg'])
         self.canvas.delete('all')
         self.key_ids.clear()
+        self.btn_items.clear()
+        self.buttons.clear()
 
-        rounded_rect(self.canvas, 0, 0, m['w'], m['h'], m['panel_r'], fill=pal['panel_bg'], outline='')
+        rounded_rect(self.canvas, 0, 0, w, h, m['panel_r'], fill=pal['panel_bg'], outline='')
         for row, (letters, offset) in enumerate(zip(self.ROWS, self.ROW_OFFSETS)):
             y1 = m['pad'] + row * (m['key_h'] + m['gap'])
             for col, letter in enumerate(letters):
                 x1 = m['pad'] + (col + offset) * (m['key_w'] + m['gap'])
                 self.key_ids[letter] = (rounded_rect(self.canvas, x1, y1, x1 + m['key_w'], y1 + m['key_h'], m['key_r'],
                                                      width=m['key_line']), (x1, y1, x1 + m['key_w'], y1 + m['key_h']))
+        radius, r = m['panel_r'], m['btn'] / 2
+        edge = max(2, round(m['pad'] * 0.6))
+        cy = h - edge - r
+        dy = cy - (h - radius)
+        cx = radius - math.sqrt(max(0.0, (radius - r) ** 2 - dy * dy)) if dy > 0 else r + edge
+        btn_x, btn_y = max(edge, round(cx - r)), round(cy - r)
+        self._draw_button('close', btn_x, btn_y)
         self._draw_labels()
+
+    def _draw_button(self, name, x1, y1):
+        s = self.m['btn']
+        x2, y2 = x1 + s, y1 + s
+        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+        h, lw = s * 0.22, max(1, round(s / 15))
+        fg = self.pal['btn_fg']
+        bg = self.canvas.create_oval(x1, y1, x2, y2, fill=fg, outline='', state='hidden',
+                                     tags='btn')
+        icons = [(self.canvas.create_line(cx - h, cy - h, cx + h, cy + h, fill=fg, width=lw, tags='btn'), 'fill'),
+                 (self.canvas.create_line(cx - h, cy + h, cx + h, cy - h, fill=fg, width=lw, tags='btn'), 'fill')]
+        self.buttons[name] = (x1, y1, x2, y2)
+        self.btn_items[name] = (bg, icons)
+        self._paint_button(name)
+
+    def _paint_button(self, name):
+        if name not in self.btn_items:
+            return
+        pal, (bg, icons) = self.pal, self.btn_items[name]
+        hover = name == self.hover
+        is_close = name == 'close'
+        self.canvas.itemconfigure(bg, state='normal' if hover else 'hidden',
+                                  fill=pal['close_hover'] if is_close else pal['btn_hover'])
+        icon_color = pal['close_icon'] if (hover and is_close) else pal['btn_fg']
+        for item, option in icons:
+            self.canvas.itemconfigure(item, **{option: icon_color})
+
+    def _hit_button(self, x, y):
+        for name, (x1, y1, x2, y2) in self.buttons.items():
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                return name
+        return None
+
+    def _set_hover(self, name):
+        if name == self.hover:
+            return
+        old, self.hover = self.hover, name
+        self._paint_button(old)
+        self._paint_button(name)
+
+    def _set_click_through(self, pass_clicks):
+        if not self.click_through or pass_clicks == self._pass_clicks:
+            return
+        self._pass_clicks = pass_clicks
+        self._apply_window_styles()
+
+    def _mouse_tick(self):
+        if self.destroyed:
+            return
+        try:
+            if self.visible and self.u32:
+                from ctypes import wintypes
+                pt = wintypes.POINT()
+                if self.u32.GetCursorPos(ctypes.byref(pt)):
+                    name = self._hit_button(pt.x - self.win.winfo_rootx(), pt.y - self.win.winfo_rooty())
+                    self._set_hover(name)
+                    self._set_click_through(name is None)
+        except TclError:
+            self.destroyed = True
+            return
+        except Exception:
+            traceback.print_exc()
+        try:
+            self.mouse_job = self.win.after(self.MOUSE_MS, self._mouse_tick)
+        except TclError:
+            self.destroyed = True
+
+    def _on_click(self, event):
+        name = self._hit_button(event.x, event.y)
+        if name == 'close':
+            try:
+                self.win.after_idle(self.destroy)
+            except TclError:
+                self.destroy()
 
     def _draw_labels(self):
         self.canvas.delete('label')
@@ -362,8 +426,6 @@ class VirtualKeyboard:
 
     @staticmethod
     def _wrap_options(text, max_lines=3):
-        """Все варианты переноса по пробелам (тире '- слово' не отрывается от слова).
-        Вариант = список (start, end) срезов text. Сначала меньше строк, затем ровнее."""
         toks = [(m.start(), m.end()) for m in re.finditer(r'-\s\S+|\S+', text)]
         options = [[(0, len(text))]]
         n = len(toks)
@@ -376,15 +438,12 @@ class VirtualKeyboard:
 
     @staticmethod
     def _segments(text, line, idx):
-        """Разбивает строку на куски (текст, выделен_ли) — выделена буква клавиши."""
         s, e = line
         if idx is not None and s <= idx < e:
             return [(t, acc) for t, acc in ((text[s:idx], False), (text[idx], True), (text[idx + 1:e], False)) if t]
         return [(text[s:e], False)]
 
     def _fit(self, options, text, idx, max_w, max_h, caption, scale):
-        """Максимально крупный шрифт; к уменьшению шрифта переходим, только если
-        не помог ни один вариант переноса."""
         m = self.m
         best = (options[0], m['font_min'], float('inf'))
         for px in range(m['font_px'], m['font_min'] - 1, -1):
@@ -467,7 +526,7 @@ class VirtualKeyboard:
         if self.destroyed:
             return
         try:
-            if self.own_root and self.u32:  # отдельный запуск: ловим Ctrl+K глобально
+            if self.own_root and self.u32:
                 k_down = self._down(self.VK_CONTROL) and self._down(ord('K'))
                 if k_down and not self.k_was_down:
                     self.toggle()
@@ -480,37 +539,37 @@ class VirtualKeyboard:
             self.destroyed = True
         except Exception:
             traceback.print_exc()
-            self.job = self.win.after(self.TICK_MS, self._tick)
+            try:
+                self.job = self.win.after(self.TICK_MS, self._tick)
+            except TclError:
+                self.destroyed = True
 
     def show(self):
         if self.destroyed or self.visible:
             return
         try:
-            prev_focus = self.master.focus_get()  # куда вернуть фокус после показа
-        except (KeyError, TclError):
-            prev_focus = None
-        self.visible = True
-        self._apply_window_styles()  # стили NOACTIVATE до показа, чтобы окно не забирало фокус
-        self.win.deiconify()
-        self.win.attributes('-topmost', 1)
-        self._apply_window_styles()
-        if prev_focus is not None and not self.own_root:
-            self.master.after(10, lambda: self._restore_focus(prev_focus))
-
-    @staticmethod
-    def _restore_focus(widget):
-        try:
-            widget.focus_force()
+            self.visible = True
+            self._apply_window_styles()
+            self.win.deiconify()
+            self.win.attributes('-topmost', 1)
+            self._apply_window_styles()
         except TclError:
-            pass
+            self.destroyed = True
+            self.visible = False
+            raise
 
     def hide(self):
         if self.destroyed or not self.visible:
             return
-        self.visible = False
-        self.win.withdraw()
-        self.set_pressed(set())
-        self.set_layer('normal')
+        try:
+            self.visible = False
+            self._set_hover(None)
+            self.win.withdraw()
+            self.set_pressed(set())
+            self.set_layer('normal')
+        except TclError:
+            self.destroyed = True
+            self.visible = False
 
     def toggle(self):
         (self.hide if self.visible else self.show)()
@@ -524,54 +583,92 @@ class VirtualKeyboard:
             return
         self.destroyed, self.visible = True, False
         try:
-            if self.job:
-                self.win.after_cancel(self.job)
+            for job in (self.job, self.mouse_job):
+                if job:
+                    try:
+                        self.win.after_cancel(job)
+                    except TclError:
+                        pass
             self.win.destroy()
         except TclError:
             pass
 
 
-# ==============================================================================
-# ФУНКЦИИ ДЛЯ ПРИВЯЗКИ К main_win
-# ==============================================================================
-_vkb = None  # текущая клавиатура (None, если не создана)
-_vkb_args = None  # (master, help_text, kwargs) последнего создания — для пересоздания
+_vkb = None
+_vkb_args = None
 
 
-def keyboard_exists():
-    """True, если клавиатура создана и ещё не удалена (в том числе если скрыта)."""
+def _is_alive():
     if _vkb is None or _vkb.destroyed:
         return False
     try:
-        return bool(_vkb.win.winfo_exists())  # окно могло умереть вместе с родителем
-    except TclError:
+        if not _vkb.win.winfo_exists():
+            return False
+        _vkb.win.wm_state()
+        return True
+    except (TclError, AttributeError):
         return False
 
 
+def keyboard_exists():
+    return _is_alive()
+
+
+def _reset_vkb():
+    global _vkb
+    dead = _vkb
+    _vkb = None
+    if dead is not None:
+        try:
+            dead.destroy()
+        except Exception:
+            pass
+
+
 def create_keyboard(master, help_text=None, **kwargs):
-    """СОЗДАТЬ и сразу показать клавиатуру. Если уже есть, ничего не делает."""
     global _vkb, _vkb_args
-    if not keyboard_exists():
-        _vkb_args = (master, help_text, kwargs)
+    if _is_alive():
+        return _vkb
+    _reset_vkb()
+    _vkb_args = (master, help_text, kwargs)
+    try:
         _vkb = VirtualKeyboard(master, help_text=help_text, **kwargs)
         _vkb.show()
+    except Exception:
+        _reset_vkb()
+        raise
     return _vkb
 
 
 def delete_keyboard():
-    """УДАЛИТЬ клавиатуру (окно уничтожается)."""
     global _vkb
-    if _vkb is not None:
-        _vkb.destroy()
-        _vkb = None
+    existed = _vkb is not None
+    _reset_vkb()
+    return existed
+
+
+def show_keyboard():
+    if not _is_alive():
+        _reset_vkb()
+        return
+    try:
+        _vkb.show()
+    except TclError:
+        _reset_vkb()
+
+
+def hide_keyboard():
+    if not _is_alive():
+        _reset_vkb()
+        return
+    try:
+        _vkb.hide()
+    except TclError:
+        _reset_vkb()
 
 
 def recreate_keyboard(theme=None):
-    """РАЗРУШИТЬ и заново СОЗДАТЬ клавиатуру, ЕСЛИ она существует.
-    theme: новая тема ('dark' / 'light' / 'auto' или функция без аргументов) — клавиатура
-    создаётся сразу с ней и запоминает её; None — параметры прежние.
-    Возвращает True, если клавиатура была и пересоздана."""
-    if not keyboard_exists() or _vkb_args is None:
+    if not _is_alive() or _vkb_args is None:
         return False
     master, help_text, kwargs = _vkb_args
     if theme is not None:
@@ -581,36 +678,13 @@ def recreate_keyboard(theme=None):
     return True
 
 
-refresh_keyboard = recreate_keyboard  # старое имя, на всякий случай
+refresh_keyboard = recreate_keyboard
 
 
 def toggle_keyboard(master, help_text=None, **kwargs):
-    """Чередует создание и удаление: нечётное нажатие создаёт, чётное удаляет."""
-    if not keyboard_exists():
+    if not _is_alive():
+        _reset_vkb()
         create_keyboard(master, help_text=help_text, **kwargs)
     else:
         delete_keyboard()
-    return 'break'  # не даём Entry/Text выполнить свою реакцию на Ctrl+K
-
-
-def main():
-    import argparse
-    parser = argparse.ArgumentParser(description='Клавиатура-шпаргалка калькулятора')
-    parser.add_argument('--theme', choices=('auto', 'dark', 'light'), default='auto')
-    parser.add_argument('--alpha', type=float, default=0.75, help='0.0 (невидимо) ... 1.0 (непрозрачно)')
-    parser.add_argument('--anchor', choices=('bottom', 'center', 'top'), default='bottom')
-    parser.add_argument('--help-file', help='путь к help.txt (по умолчанию info.help_text или help.txt рядом)')
-    args = parser.parse_args()
-    if sys.platform == 'win32':
-        try:
-            ctypes.windll.shcore.SetProcessDpiAwareness(2)
-        except Exception:
-            pass
-    text = Path(args.help_file).read_text(encoding='utf-8-sig') if args.help_file else None
-    create_keyboard()
-    print('Ctrl+K — показать/скрыть клавиатуру, Shift / Ctrl — другие слои, Ctrl+Alt+Q — закрыть')
-    _vkb.master.mainloop()
-
-
-if __name__ == '__main__':
-    main()
+    return 'break'

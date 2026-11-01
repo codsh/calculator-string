@@ -65,10 +65,10 @@ def create_fake_main_win():
 
 def switch_to_next_window():
     # Прячем калькулятор с экрана: в этот момент Windows находится в шоке и ПРИНУДИТЕЛЬНО отдает фокус и каретку окну, которое было под ним.
-    main_win.after(50, create_fake_main_win)
-    main_win.after(70, main_win.withdraw)
+    main_win.after(50, lambda: create_fake_main_win())
+    main_win.after(70, lambda: main_win.withdraw())
     # Через 200 миллисекунд возвращаем калькулятор обратно. Он появится на том же месте, но фокус останется в чужом окне, а каретка там гарантированно активируется!
-    main_win.after(150, main_win.deiconify)
+    main_win.after(150, lambda: main_win.deiconify())
     main_win.after(170, lambda: fake_main_win.destroy())
     if added_win.focus_displayof():
         main_win.after(200, lambda: main_win.event_generate('<FocusOut>'))
@@ -671,7 +671,7 @@ darc_generator = tuple([f'{i}{j}' for i in ('darc', 'arc', 'd') for j in ('sin',
 ddarc_gen = tuple([f'{i}{j}' for i in ('darc', 'arc', 'd', '') for j in ('sin', 'cos', 'ctg', 'tg')])
 
 united_symbols = ('div', 'mod') + darc_generator + ('log', 'sin', 'cos', 'ctg') + ('ln', 'lg', 'tg', 'by')
-composite_trig_funcs = tuple(i for i in darc_generator if i not in ('d', 'arc', 'darc')) + ()
+composite_trig_funcs = tuple(i for i in darc_generator if i not in ('d', 'arc'))
 united_symbols_with_scopes = (tuple(f'{i}{j}' for j in ('|', '(') for i in darc_generator)
      + ('log(', 'sin(', 'cos(', 'ctg(', ')by(') + ('log|', 'sin|', 'cos|', 'ctg|', '|by|', '|by(', ')by|') + ('by(', ')by', '|by', 'by|') + ('ln|', 'lg|', 'tg|') + ('ln(', 'lg(', 'tg('))
 united_symbols_without_scopes = darc_generator + ('sin', 'cos', 'ctg', 'tg', 'ln', 'lg')  # порядок важен, сначала котангенс а лишь потом тангенс, чтобы удалялся ctg а не c tg
@@ -691,7 +691,7 @@ last_val_before_geometry_change = 'если это вставится, знач�
 last_time_round_change = 0
 num_construct = r'((?:\d+[.,]?\d*|[.,]\d+)(?:[eE]-?\d*[.,]?\d*)?|[φπeE])'
 num_construct_with_spaces = r'((?:(?:\d\s*)+(?:[.,]\s*)?(?:\d\s*)*|(?:[.,]\s*)(?:\d\s*)+)(?:[eE]\s*(?:-\s*)?(?:\d\s*)*(?:[.,]\s*)?(?:\d\s*)*)?|[φπeE])'
-num_construct_with_spaces_and_factorials = r'(?:(?:(?:(?:\d\s*)+(?:[.,]\s*)?(?:\d\s*)*|(?:[.,]\s*)(?:\d\s*)+)(?:[eE]\s*(?:-\s*)?(?:\d\s*)*(?:[.,]\s*)?(?:\d\s*)*)?|[φπeE])(\s*!)*)'
+construct_with_num_or_roots_and_factorials = fr'(?:{num_construct_with_spaces}|(?:√\s*)*[^√!](?:\s*!)*)'
 word_construct = '[а-яА-ЯЁё]+'
 tokenator = r'(d?(?:arc)?(?:sin|cos|c?tg)|d?arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\))'
 super_tokenator = r'(sin|cos|c?tg|arc|ln|lg|√|log|by|(?<![\d.])e(?![\d.])|d(?!iv)|\+|=|!|div|mod|\||•|/|:|\^|(?:(?<!\()(?<![\d.]e))\-|\(|\)|[\dφπeE.])'
@@ -1113,6 +1113,8 @@ def modify_info(example):
     a = '– '
     if not example:
         return calculator_greeting
+    if 'w' in example and not 'v' in example:
+         return '– переменная w - средняя арифметическая всех v, указанных в формуле'
     if example == 'v':
         return '– переменная, после которой пишется порядковый номер ряда или колонки, значения которой нужно подставить вместо переменной'
     if example == calculator_greeting.lower():
@@ -1328,7 +1330,7 @@ def solve_example(example=None, get_raw_ans=False):
     if '#' in example:  # Отладочная информация, нельзя допустить # от других символов, оставив его для E и других замен
         return ''
     example = example.replace('e', '#')
-    bad_symbols = re.findall(r'[^0-9v+\-•:^,@%!()Uu#]', example)
+    bad_symbols = re.findall(r'[^0-9vw+\-•:^,@%!()Uu#]', example)
     if bad_symbols:
         return f'Почему символ "{bad_symbols[0] if bad_symbols[0] not in ('@', '%') else ('mod', 'div')[bad_symbols[0] == '@']}" есть в примере?'
     example = example.replace('#', 'e')
@@ -1339,7 +1341,7 @@ def solve_example(example=None, get_raw_ans=False):
             return 'Ошибка в начале примера!'
     example = example.replace('%', 'mod').replace('@', 'div')
     if bad_var := re.search(r'[0-9,]v|v[,0]', example):
-        return f'Сочетание "{bad_var}" в примере недопустимо!'
+        return f'Сочетание "{bad_var[0]}" в примере недопустимо!'
     if re.search(r'(?<!di)v', example):
         example_without_div = example.replace('div', 'dithoutvees')
         vars = set(map(int, re.findall(r'(?<=v)\d+', example_without_div)))
@@ -1799,6 +1801,8 @@ def create_added_win(win_type):
     
     added_win.bind('<Key>', disable_editing_added_win_text)
     text_entry.bind('<Key>', disable_editing_added_win_text)
+    added_win.bind('<FocusIn>', added_win_focus_in)
+    text_entry.bind('<FocusIn>', added_win_focus_in)
     
     added_win['bg'] = ('#' + '20' * 3, '#' + 'e8' * 3)[settings['theme'] == 'light']
     
@@ -1844,6 +1848,7 @@ def create_added_win(win_type):
 
     set_window_theme_border(window=added_win, is_dark_theme=settings['theme'] == 'dark')
     (finish_to_history_win, finish_to_help_win)[is_help]()
+    create_tape('info', f'закрыть окно {('истории', 'инструкции')[is_help]} можно правой кнопкой мыши')
 
 
 def change_help_geometry():
@@ -1990,7 +1995,7 @@ def create_tape_base(tape_color):
 
 
 def destroy_tape():
-    global tape, tape_creation_time
+    global tape, tape_creation_time, tape_canvas
     if tape:
         tape.destroy()
     tape = None
@@ -2076,7 +2081,8 @@ def manage_not_main_window_close():
     added_win.title(invisible_win_title)
     entry_box.focus_set()
     beauty_letter_tape.wm_attributes('-topmost', 1)
-
+    if bool(tape) and int(tape_canvas.cget('width')) == 0 and re.search(r'закрыть окно.*можно правой кнопкой мыши', tape_info_label.cget('text')):
+        destroy_tape()
 
 ROUND_ANSWER_TO = 18
 ROUND_ANSWER_TO_IF_POW = 12
@@ -2149,6 +2155,7 @@ def set_keyboard_layout_memory():
 
 def add_hotkeys_from_other_wins_and_import():
     global pyperclip, virtual_keyboard
+    import pyautogui
     import virtual_keyboard
     import pyperclip  # тоже самое
     import keyboard  # дохрена жрёт
@@ -2156,12 +2163,13 @@ def add_hotkeys_from_other_wins_and_import():
     keyboard.add_hotkey('alt+space', set_focus_from_not_my_application)
     keyboard.add_hotkey('shift+alt', set_keyboard_layout_memory)
     keyboard.add_hotkey('win+space', set_keyboard_layout_memory)
-    main_win.wm_attributes('-topmost', 1)  # Сделать окно несворачиваемым при нажатии на другие окна
     main_win.attributes('-alpha', '0.975')
-    main_win.title('Калькулятор.')
+    main_win.attributes('-topmost', 1)
+    pyautogui.hotkey('alt', 'tab')
+    main_win.after(25, lambda: pyautogui.hotkey('alt', 'tab'))
 
 
-main_win.after(200, add_hotkeys_from_other_wins_and_import)
+main_win.after(150, add_hotkeys_from_other_wins_and_import)
 
 
 def matching_when_cursor_on_regex(left_regex, right_regex):
@@ -2189,12 +2197,15 @@ def delete_to_the(k):
     last_key_without_mul2 = bool(re.fullmatch(r'[sctC\\]', last_keys_not_having_keytype_changed[-2]) and last_keys_not_having_keytype_changed[-1] == 'BackSpace')
     last_key_without_scope_for_minus = bool(last_keys_not_having_keytype_changed[-1] == 'minus' and last_keys_not_having_keytype_changed[-2] not in ('parenleft', 'o'))
     last_key_without_minus_for_root = bool(last_keys_not_having_keytype_changed[-1] == 'r' and last_keys_not_having_keytype_changed[-2] != 'minus')
+
+
     for i in reunite(composite_trig_funcs):
-        if ((matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}{i}\s*\(', r'\)') or matching_when_cursor_on_regex(fr'{i}\s*\|', r'\|'))
-            and last_keys_not_having_keytype_changed[-1] in ('a', 's', 'c', 't', 'C') and k == -1):
+        if ((matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}{i}\s*\(', r'\)') or matching_when_cursor_on_regex(fr'{i}\s*U', r'u'))
+            and (last_keys_not_having_keytype_changed[-1] in ('a', 's', 'c', 't', 'C') or i == 'd\\s*a\\s*r\\s*c' and last_keys_not_having_keytype_changed[-2] in ('s', 'c', 't', 'C')
+                 and last_keys_not_having_keytype_changed[-1] == 'BackSpace') and k == -1):
             if (re.search(r'a\\s\*r\\s\*c\\s\*\S', i) and last_keys_not_having_keytype_changed[-1] in ('s', 'c', 't', 'C') or re.search(r'd\s*\S', i)
-                and (last_keys_not_having_keytype_changed[-1] in ('a', 's', 'c', 't', 'C') or last_key_without_mul2)):
-                example_value = delete_in_example(example_value, -len(re.search(r'(?:sin|cos|tg|(?<!ar)ctg)\s*\(\s*$' if not (last_keys_not_having_keytype_changed[-1] == 'a' or last_key_without_mul2) else r'arc\s*\(\s*$', example_value[:cursor_index])[0]))
+                and last_keys_not_having_keytype_changed[-1] in ('a', 's', 'c', 't', 'C') or re.search(r'd\\s\*a\\s\*r\\s\*c', i) and last_key_without_mul2):
+                example_value = delete_in_example(example_value, -len(re.search(r'(?:sin|cos|(?<!ar)ctg|tg)\s*\(\s*$' if not (last_keys_not_having_keytype_changed[-1] == 'a' or last_key_without_mul2) else r'arc\s*\(\s*$', example_value[:cursor_index])[0]))
                 example_value = delete_in_example(example_value, len(re.match(r'\s*\)', example_value[cursor_index:])[0]))
                 example_value = insert_in_example(example_value, '(')
                 example_value = insert_in_example(example_value, ')', right=True)
@@ -2207,7 +2218,7 @@ def delete_to_the(k):
                 example_value = insert_in_example(example_value, 'd')
             return
     for i in reunite(united_symbols_without_scopes):
-        if (matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}{i}\s*\(', r'\)') or matching_when_cursor_on_regex(fr'{i}\s*\|', r'\|')) and k == -1:
+        if (matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}{i}\s*\(', r'\)') or matching_when_cursor_on_regex(fr'{i}\s*U', r'u')) and k == -1:
             example_value = delete_in_example(example_value, -len(matches[0][0]))
             if after_1_condition := re.search(r'(?:[^0-9veE\.]|^)\s*1\s*(\-\s*)$', example_value[:cursor_index]):
                 example_value = delete_in_example(example_value, -len(after_1_condition[1]))
@@ -2218,38 +2229,38 @@ def delete_to_the(k):
     if (after_1_minus_root_condition := re.fullmatch(r'(?:[^0-9veE\.]|^)\s*1\s*(\-\s*√)', example_value[:cursor_index])) and last_key_without_minus_for_root:
         example_value = delete_in_example(example_value, -len(after_1_minus_root_condition[1]))
         return
-    for indx, left_match_check in enumerate(reunite(('log(', 'log|', 'log'))):
-        for right_match_check in reunite(((')by()', ')by||', ')by'), ('|by||', '|by()', '|by'), ('by||', 'by()', 'by'))[indx]):
+    for indx, left_match_check in enumerate(reunite(('log(', 'logU', 'log'))):
+        for right_match_check in reunite(((')by()', ')byUu', ')by'), ('ubyUu', 'uby()', 'uby'), ('byUu', 'by()', 'by'))[indx]):
             if ((matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}{left_match_check}', right_match_check)) and
-                (k == -1 or left_match_check.replace('s*', '').replace('\\', '') + right_match_check.replace('s*', '').replace('\\', '') in ('logby', 'logby()', 'logby||'))):
+                (k == -1 or left_match_check.replace('s*', '').replace('\\', '') + right_match_check.replace('s*', '').replace('\\', '') in ('logby', 'logby()', 'logbyUu'))):
                 example_value = delete_in_example(example_value, -len(matches[0][0]))
                 if (after_1_condition := re.search(r'(?:[^0-9veE\.]|^)\s*1\s*(\-\s*)$', example_value[:cursor_index])) and left_match_check + right_match_check != 'logby':
                     example_value = delete_in_example(example_value, -len(after_1_condition[1]))
                 example_value = delete_in_example(example_value, len(matches[1][0]))
                 return
-    for indx, left_match_check in enumerate(reunite(('log()by(', 'log||by(', 'log||by|', 'log()by|', 'log()by', 'log||by'))):
-        right_match_check = (r'\)', r'\|', r'')[indx // 2]
+    for indx, left_match_check in enumerate(reunite(('log()by(', 'logUuby(', 'logUubyU', 'log()byU', 'log()by', 'logUuby'))):
+        right_match_check = (r'\)', r'u', r'')[indx // 2]
         if (matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}{left_match_check}', right_match_check)) and k == -1:
             example_value = delete_in_example(example_value, -len(matches[0][0]))
             if after_1_condition := re.search(r'(?:[^0-9veE\.]|^)\s*1\s*(\-\s*)$', example_value[:cursor_index]):
                 example_value = delete_in_example(example_value, -len(after_1_condition[1]))
             example_value = delete_in_example(example_value, len(matches[1][0]))
             return
-    if matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}\({r'\s*-' * last_key_without_scope_for_minus}', r'\)') or matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}\|', r'\|'):
+    if matches := matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}\({r'\s*-' * last_key_without_scope_for_minus}', r'\)') or matching_when_cursor_on_regex(fr'{r'•?\s*' * last_key_without_mul}U', r'u'):
         example_value = delete_in_example(example_value, -len(matches[0][0]))
         example_value = delete_in_example(example_value, len(matches[1][0]))
     elif not re.search(fr'E-?{num_construct}•e$', exampled_value()[:cursor_index]) and (i := re.search(r'(?<=[\d.])•(?:√|e\s*-?)\s*$', example_value[:cursor_index])) and last_keys_not_having_keytype_changed[-1] == ('r', 'e', 'minus')[('e' in i[0]) + ('-' in i[0])] and k == -1:
         example_value = delete_in_example(example_value, -len(i[0]))
         example_value = insert_in_example(example_value, ('√', 'e' + '-' * (last_keys_not_having_keytype_changed[-1] == 'minus'))[last_keys_not_having_keytype_changed[-1] != 'r'])
     elif cursor_index > 0 and k == -1 or cursor_index < len(example_value) and k == 1:
-        add_0_point_1_slash = bool(re.search(r'(?:[^0-9veE\.]|^)\s*1\s*[+/]\s*|(?:[^0-9\.]\s*|^)[01]\s*\.\s*', example_value[:cursor_index])) and bool(re.search(r'\s*(?:$|\))', example_value[cursor_index:]))
-        special_cases_2plus = bool(re.search(r'(?:(?:[+-•/^√(]|^)\s*2\s*[•^]|[•/^√]\s*2\s*[+/])\s*', example_value[:cursor_index])) and bool(re.match(r'\s*(?:$|)', example_value[cursor_index:]))
+        add_0_point_1_slash = bool(re.search(r'(?:[^0-9veE\.]|^)\s*1\s*[+/]\s*|(?:[^0-9\.]\s*|^)[01]\s*\.\s*', example_value[:cursor_index])) and bool(re.search(r'\s*(?:$|[)u])', example_value[cursor_index:]))
+        special_cases_2plus = bool(re.search(r'(?:(?:[+-•/^√(U]|^)\s*2\s*[•^]|[•/^√]\s*2\s*[+/])\s*', example_value[:cursor_index])) and bool(re.match(r'\s*(?:$|)', example_value[cursor_index:]))
         pre_length = -len(re.search(fr'(?:\S|{fr'\^\s*{'ujUJ'.index(last_keys_not_having_keytype_changed[-1]) + 2}\s*|' if last_keys_not_having_keytype_changed[-1] in 'ujUJ' else ''}' + 
                                     fr'{r'(?:\S|(?:(?<!^)1\s*)?/\s*2\s*)|' if last_keys_not_having_keytype_changed[-1] == 'h' else ''}' + 
-                                    fr'{fr'•?\s*[Ee](?:\s*-)?\s*(?:{(3, 6, 9, 12, 15)['kMBTQkm'.index(last_keys_not_having_keytype_changed[-1]) % 5]})\s*|' if last_keys_not_having_keytype_changed[-1] in 'kMBTQkm' else ''}' +
-                                    fr'{r'1\s*[+/]|[01]\s*\.|' * bool(add_0_point_1_slash and re.match(r'\s*(?:$|\))', example_value[cursor_index:]))}' +
-                                    fr'{r'2\s*[+•^/]|' * bool(special_cases_2plus and re.match(r'\s*(?:$|\))', example_value[cursor_index:]))}' + 
-                                    fr'(?<=π)\s*/\s*\d|(?<=[φ)])\s*(?:/\s*(?:\d|0\.)|•\s*1\.)|(?<=[e!])\s*•\s*(?:\d|[01]\.)|(?<=[\d.πφe])\s*•\s*[πφe]|^)\s*$', example_value[:cursor_index])[0])
+                                    fr'{fr'•?\s*[Ee](?:\s*-)?\s*(?:{(3, 6, 9, 12, 15)['kMBTQkmb'.index(last_keys_not_having_keytype_changed[-1]) % 5]})\s*|' if last_keys_not_having_keytype_changed[-1] in 'kMBTQkmb' else ''}' +
+                                    fr'{r'1\s*\+|' * bool(add_0_point_1_slash and re.match(r'\s*(?:$|[)u])', example_value[cursor_index:]))}' + fr'{r'1\s*/|[01]\s*\.|' * add_0_point_1_slash}' +
+                                    fr'{r'2\s*[+•^/]|' * bool(special_cases_2plus and re.match(r'\s*(?:$|[)u])', example_value[cursor_index:]))}' + 
+                                    fr'(?<=π)\s*/\s*\d|(?<=[φu)])\s*(?:/\s*(?:\d|0\.)|•\s*1\.)|(?<=[e!])\s*•\s*(?:\d|[01]\.)|(?<=[\d.πφe])\s*•\s*[πφe]|^)\s*$', example_value[:cursor_index])[0])
 
         past_length = len(re.match(fr'\s*(?:\S|$)', example_value[cursor_index:])[0])
         example_value = delete_in_example(example_value, (pre_length, past_length)[k > 0])
@@ -2335,8 +2346,8 @@ def destroy_nearby_bracks(example, arg):
 
 
 def insertion_if_division_of_one(left_symbol, arg, example, destroy_nearby_scopes=False, without_one=False):
-    division_after_1_condition = re.fullmatch(r'(?:[^0-9veE\.]|^\s*)1', exampled_value(example)[max(cursor_index - 2, 0):cursor_index])
-    division_after_num_condition = re.search(r'(?<![ev])(?<![0-9.]e-)(?:\d+\.?\d*|\.\d+)/$', exampled_value(example)[:cursor_index])
+    division_after_1_condition = re.fullmatch(r'(?:[^0-9vweE\.]|^\s*)1', exampled_value(example)[max(cursor_index - 2, 0):cursor_index])
+    division_after_num_condition = re.search(r'(?<![evw])(?<![0-9.]e-)(?:\d+\.?\d*|\.\d+)/$', exampled_value(example)[:cursor_index])
     const_to_pow_condition = re.search(fr'({re.escape(arg)}\s*\^\s*)(\(?\s*-?\s*)((?:\d\s*)+\s*\.?\s*(?:\d\s*)*\s*|\.\s*(?:\d\s*)+\s*)((?(1)\s*\)?\s*|))$', example[:cursor_index])
     const_condition = re.search(fr'({re.escape(arg)}\s*)$', example[:cursor_index])
     if re.search(r'[φπe]', arg) and const_to_pow_condition:
@@ -2354,13 +2365,13 @@ def insertion_if_division_of_one(left_symbol, arg, example, destroy_nearby_scope
             example = delete_in_example(example, -len(re.search(r'(?<=[0-9.])\s*/\s*$', example[:cursor_index])[0]))
             return insert_in_example(example, f'e-{arg[1:]}')
         else:
-            return insert_in_example(example, f'{'•' if left_symbol in 'φπevEထ)!' else ''}e{arg[1:]}')
+            return insert_in_example(example, f'{'•' if left_symbol in 'φπevwEထ)!' else ''}e{arg[1:]}')
     elif division_after_1_condition:
         return (insert_in_example, destroy_nearby_bracks)[destroy_nearby_scopes](example, f'{('/', '-')[arg in ('d', 'arc', 'sin', 'cos', 'tg', 'ctg', 'log(', 'ln', 'lg', '√')]}{arg}')
     elif arg == 'φ':
-        return (insert_in_example, destroy_nearby_bracks)[destroy_nearby_scopes](example, '!' if left_symbol in '0123456789φπevEထ)!' else 'φ')
+        return (insert_in_example, destroy_nearby_bracks)[destroy_nearby_scopes](example, '!' if left_symbol in '0123456789φπevwEထu)!' else 'φ')
     else:
-        return (insert_in_example, destroy_nearby_bracks)[destroy_nearby_scopes](example, f'{'•' if left_symbol in '0123456789φπevEထ)!' and not re.search(r'div$', exampled_value(example)) else ''}{arg}')
+        return (insert_in_example, destroy_nearby_bracks)[destroy_nearby_scopes](example, f'{'•' if left_symbol in '0123456789φπevwEထu)!' and not re.search(r'div$', exampled_value(example)) else ''}{arg}')
 
 
 def set_window_theme_border(window, is_dark_theme):
@@ -2391,13 +2402,10 @@ def set_window_theme_border(window, is_dark_theme):
 
 
 def close_main_win_with_layout_switching(*key):
-    if virtual_keyboard._vkb and not virtual_keyboard._vkb.destroyed and virtual_keyboard._vkb.visible:
-        virtual_keyboard.delete_keyboard()
-    else:
-        close_main_win()
-        if not is_russian_layout() and keyboard_layout_memory == 'ru':
-            hwnd = user32.GetForegroundWindow()
-            user32.PostMessageW(hwnd, 0x50, 0, user32.LoadKeyboardLayoutW("00000419", 0x1))
+    close_main_win()
+    if not is_russian_layout() and keyboard_layout_memory == 'ru':
+        hwnd = user32.GetForegroundWindow()
+        user32.PostMessageW(hwnd, 0x50, 0, user32.LoadKeyboardLayoutW("00000419", 0x1))
 
 
 def auto_change_size_of_everything(key=None, size_definition=True):
@@ -2499,12 +2507,26 @@ def manage_key_event(key, just_from_added_win=False):
                     change_width_of_entry(entry_box.get(), entry_box, result)
                     bypass = True
     if not bypass:
+        if keysym != 'b':
+            old_xample = example_value
+            example_value = f'({exampled_value(example_value).strip()})'
+            for i in range(len(example_value) - 1):
+                if example_value[i + 1] == '|':
+                    module_type = 'Uu'[example_value[i] in '0123456789!)ueπφE' or bool(re.match(r'[+•/^!\)]|mod|div', example_value[i + 2:]))]
+                    example_value = example_value[:i + 1] + module_type + example_value[i + 2:]
+            example_value = re.sub(r'[^Uu]', '', example_value)
+            while '|' in old_xample:
+                old_xample = old_xample.replace('|', example_value[:1], 1)
+                example_value = example_value[1:]
+            example_value = old_xample
+
+            
         if (symbol_left_from_cursor() == '.' and (len(keysym) == 1 and keysym in 'sctlngpefraodmxbivyujwIkMBTQPEUJCF' or keysym in keys_after_dot)):
             example_value = insert_in_example(example_value, '5')
         if keysym == 'BackSpace':
-            greedy_deletion = tuple(f'{k}{j}' for j in ('(', '|') for k in ('sin', 'cos', 'ctg', 'tg'))
-            for i in reunite(greedy_deletion + united_symbols):
-                if (((i_got_pattern := re.search(fr'{i}\s*$', example_value[:cursor_index])) and (i not in reunite(greedy_deletion) or re.fullmatch(r'\s*', example_value[cursor_index:])))
+            greedy_deletion = reunite(united_symbols_with_scopes)
+            for i in greedy_deletion + reunite(united_symbols):
+                if (((i_got_pattern := re.search(fr'{i}\s*$', example_value[:cursor_index])) and (i not in greedy_deletion or re.fullmatch(r'\s*', example_value[cursor_index:])))
                     and not (re.search(fr'log\s*$', example_value[:cursor_index]) and re.match(fr'\s*by', example_value[cursor_index:]))):
                     example_value = delete_in_example(example_value, -len(i_got_pattern[0]))
                     break
@@ -2536,7 +2558,7 @@ def manage_key_event(key, just_from_added_win=False):
             #     example_value = insert_in_example(example_value, f'{find_the_most_useful_symbol_to_paste(example_value, symbol_left_from_cursor() in '0123456789πφe.)!ထ', first=False)}')
             #     example_value = example_value[:max_character_amount]
         elif keysym == 'h':
-            example_value = insert_in_example(example_value, 'h' if not example_value else '/2' if symbol_left_from_cursor() in '0123456789φπevEထ)!' else '1/2')
+            example_value = insert_in_example(example_value, 'h' if not example_value else '/2' if symbol_left_from_cursor() in '0123456789φπevwEထu)!' else '1/2')
         elif keysym == 'space':
             example_value = insert_in_example(example_value, ' ')
         elif keysym == 'I':
@@ -2591,7 +2613,7 @@ def manage_key_event(key, just_from_added_win=False):
                 insert_by += insert_by_addition
                 example_value = example_value.replace('U', '|').replace('u', '|')
                 if insert_billion_flag:
-                    should_delete_mul_or_exp = bool(re.search(r'(?:(?:\d\s*)*(?:[.,]\s*))?(?:\d\s*)+[eE]\s*(?:-\s*)?(?:\d\s*)+(?:[.,]\s*)?(?:\d\s*)*', example_value[:cursor_index]))
+                    should_delete_mul_or_exp = bool(re.search(r'(?:-\s*)?(?:\d\s*)+(?:[.,]\s*)?(?:\d\s*)*', example_value[:cursor_index]))
                     example_value = delete_in_example(example_value, -len(a := re.search(fr'{r'•?' * should_delete_mul_or_exp}\s*$', example_value[:cursor_index])[0]))
                     example_value = insertion_if_division_of_one(symbol_left_from_cursor(), f'E9', example_value, without_one='•' in a)
                 else:
@@ -2627,7 +2649,7 @@ def manage_key_event(key, just_from_added_win=False):
                 elif symbol_left_from_cursor().isdigit():
                     example_value = insert_in_example(example_value, '000')
                 else:
-                    example_value = insert_in_example(example_value, '•' * (symbol_left_from_cursor() in 'φπeEထ)!') + f'1000')
+                    example_value = insert_in_example(example_value, '•' * (symbol_left_from_cursor() in 'φπeEထu)!') + f'1000')
             elif keysym in 'kMBTQ':
                 power_addons = ('kMBTQ'.index(keysym) + 1) * 3
                 if not (e_power := re.search(fr'E-?{num_construct}$', exampled_value()[:cursor_index])):
@@ -2648,10 +2670,10 @@ def manage_key_event(key, just_from_added_win=False):
                 # example_value = insert_in_example(example_value, f'{'/100' if symbol_left_from_cursor() in '0123456789φπeEထ)!' else '1/100'}')
                 example_value = insertion_if_division_of_one(symbol_left_from_cursor(), 'φ', example_value)
         elif keysym in ('period', 'comma'):
-            if re.search(r'\.\d+$', exampled_value()[:cursor_index]):
+            if re.search(r'(?:\.\d+|w)$', exampled_value()[:cursor_index]):
                 example_value = insert_in_example(example_value, '•1.')
             elif symbol_left_from_cursor() != '.':
-                example_value = insert_in_example(example_value, '/' if symbol_left_from_cursor() == 'π' else '•' if symbol_left_from_cursor() in 'φe)!' else '')
+                example_value = insert_in_example(example_value, '/' if symbol_left_from_cursor() == 'π' else '•' if symbol_left_from_cursor() in 'φeu)!' else '')
                 example_value = insert_in_example(example_value, '.' if symbol_left_from_cursor().isdigit() else '1.')
             else:
                 example_value = delete_in_example(example_value, -len(re.search(r'\.\s*$', example_value[:cursor_index])[0]))
@@ -2664,8 +2686,8 @@ def manage_key_event(key, just_from_added_win=False):
         elif keysym == 'D':
             example_value = insert_in_example(example_value, 'div')
         elif keysym == 'm':
-            if not re.search(fr'[.,\dφπeE)]$', exampled_value()[:cursor_index]):
-                should_delete_mul_or_exp = bool(re.search(r'(?:(?:\d\s*)*(?:[.,]\s*))?(?:\d\s*)+[eE]\s*(?:-\s*)?(?:\d\s*)+(?:[.,]\s*)?(?:\d\s*)*', example_value[:cursor_index]))
+            if not re.search(fr'[.,\dφπeEu)]$', exampled_value()[:cursor_index]):
+                should_delete_mul_or_exp = bool(re.search(r'(?:-\s*)?(?:\d\s*)+(?:[.,]\s*)?(?:\d\s*)*', example_value[:cursor_index]))
                 example_value = delete_in_example(example_value, -len(a := re.search(fr'{r'•?' * should_delete_mul_or_exp}\s*$', example_value[:cursor_index])[0]))
                 example_value = insertion_if_division_of_one(symbol_left_from_cursor(), f'E6', example_value, without_one='•' in a)
             else:
@@ -2707,11 +2729,11 @@ def manage_key_event(key, just_from_added_win=False):
         elif keysym == 'at':
             example_value = insert_in_example(example_value, 'div')
         elif keysym in ('asciicircum', 'w'):
-            if symbol_left_from_cursor() not in '0123456789φπeEvထ)|!' and keysym != 'asciicircum':
+            if symbol_left_from_cursor() not in '0123456789φπeEvwထu)|!' and keysym != 'asciicircum':
                 example_value = insert_in_example(example_value, '2')
             example_value = insert_in_example(example_value, '^')
         elif keysym == 'y':
-            if symbol_left_from_cursor() not in '0123456789φπeEvထ)|!' and keysym != 'asciicircum':
+            if symbol_left_from_cursor() not in '0123456789φπeEvwထu)|!' and keysym != 'asciicircum':
                 example_value = insert_in_example(example_value, '1')
             example_value = insert_in_example(example_value, 'E-')
         elif keysym == 'u':
@@ -2722,7 +2744,7 @@ def manage_key_event(key, just_from_added_win=False):
             if symbol_left_from_cursor() == '•' and keysym != 'asterisk':
                 example_value = delete_in_example(example_value, -len(re.search(r'•\s*$', example_value[:cursor_index])[0]))
                 example_value = insert_in_example(example_value, '^')
-            elif symbol_left_from_cursor() not in '0123456789φπeEvထ)|!' and keysym != 'asterisk':
+            elif symbol_left_from_cursor() not in '0123456789φπeEvwထu)|!' and keysym != 'asterisk':
                 example_value = insert_in_example(example_value, '2•')
             else:
                 example_value = insert_in_example(example_value, '•')
@@ -2745,7 +2767,7 @@ def manage_key_event(key, just_from_added_win=False):
             if symbol_left_from_cursor() in '•/^√' and keysym != 'plus':
                 example_value = insert_in_example(example_value, '2')
                 example_value = insert_in_example(example_value, '+')
-            elif symbol_left_from_cursor() not in '0123456789φπeEvထ)|!' and keysym != 'plus':
+            elif symbol_left_from_cursor() not in '0123456789φπeEvwထu)|!' and keysym != 'plus':
                 example_value = insert_in_example(example_value, '1+')
             else:
                 example_value = insert_in_example(example_value, '+')
@@ -2753,7 +2775,7 @@ def manage_key_event(key, just_from_added_win=False):
             if symbol_left_from_cursor() == '/' and keysym == 'slash':
                 example_value = delete_in_example(example_value, -len(re.search(r'/\s*$', example_value[:cursor_index])[0]))
                 example_value = insert_in_example(example_value, 'div')
-            elif symbol_left_from_cursor() not in '0123456789φπeEvထ)|!' and keysym in ('semicolon', 'slash'):
+            elif symbol_left_from_cursor() not in '0123456789φπeEvwထu)|!' and keysym in ('semicolon', 'slash'):
                 if keysym == 'semicolon':
                     example_value = insert_in_example(example_value, '(1/')
                     example_value = insert_in_example(example_value, ')', right=True)
@@ -2770,7 +2792,7 @@ def manage_key_event(key, just_from_added_win=False):
         elif keysym in ('parenleft', 'bracketleft'):
             example_value = insertion_if_division_of_one(symbol_left_from_cursor(), '(', example_value)
         elif keysym == 'o':
-            example_value = insert_in_example(example_value, f'{'/' if re.search(r'(?:[^0-9\.]|^)1$', exampled_value()[:cursor_index]) else '•' if symbol_left_from_cursor() in '0123456789φπeEvထ)!' else ''}(')
+            example_value = insert_in_example(example_value, f'{'/' if re.search(r'(?:[^0-9\.]|^)1$', exampled_value()[:cursor_index]) else '•' if symbol_left_from_cursor() in '0123456789φπeEvwထu)!' else ''}(')
             example_value = insert_in_example(example_value, ')', right=True)
         elif keysym in ('parenright', 'bracketright'):
             example_value = insert_in_example(example_value, ')')
@@ -2780,26 +2802,31 @@ def manage_key_event(key, just_from_added_win=False):
             last_keys_not_having_keytype_changed = list(filter(lambda key: key != 'changed', last_keys))
             if re.search(r'(?:[^0-9.]|^)\s*0\s*$', exampled_value(example_value)[:cursor_index]):
                 example_value = insert_in_example(example_value, f'.{keysym}')
-            elif symbol_left_from_cursor() in 'πφ)':
+            elif symbol_left_from_cursor() in 'uπφ)':
                 example_value = insert_in_example(example_value, f'/{keysym}')
             elif re.search(fr'{num_construct}$', exampled_value()[:cursor_index]) and last_keys_not_having_keytype_changed[-1] in ('kMmBbTQ'):
                 example_value = insert_in_example(example_value, f'•{keysym}')
             elif re.search(fr'{num_construct}•e$', exampled_value()[:cursor_index]) and last_keys_not_having_keytype_changed[-2] not in ('x', 'asterisk') and not re.search(fr'[Ee]-?{num_construct}•e$', exampled_value()[:cursor_index]):
                 example_value = delete_in_example(example_value, -len(re.search(r'•\s*e\s*$', example_value[:cursor_index])[0]))
                 example_value = insert_in_example(example_value, f'e{keysym}')
-            elif re.fullmatch(r'(?:[^0-9veE.]|^\s*)1/e$', exampled_value()[max(cursor_index - 4, 0):cursor_index]) and last_keys_not_having_keytype_changed[-2] not in ('slash', 'colon', 'semicolon'):
+            elif re.fullmatch(r'(?:[^0-9vweE.]|^\s*)1/e$', exampled_value()[max(cursor_index - 4, 0):cursor_index]) and last_keys_not_having_keytype_changed[-2] not in ('slash', 'colon', 'semicolon'):
                 example_value = delete_in_example(example_value, -len(re.search(r'1\s*/\s*e\s*$', example_value[:cursor_index])[0]))
                 example_value = insert_in_example(example_value, f'1e-{keysym}')
                 if re.search(fr'(?:(?<=^)|(?<![\dφπeE]))\s*(?:\d+\.?\d*|\.\d+)•1[Ee]-{keysym}$', exampled_value()[:cursor_index]):
                     example_value = delete_in_example(example_value, -len(re.search(fr'•\s*1\s*[Ee]\s*-\s*{keysym}\s*$', example_value[:cursor_index])[0]))
                     example_value = insert_in_example(example_value, f'e-{keysym}')
-            elif re.search(r'(?<![Eev])(?<![0-9.]e-)(?:\d+\.?\d*|\.\d+)/e$', exampled_value()[:cursor_index]) and last_keys_not_having_keytype_changed[-2] not in ('slash', 'colon', 'semicolon'):
+            elif re.search(r'(?<![Eevw])(?<![0-9.]e-)(?:\d+\.?\d*|\.\d+)/e$', exampled_value()[:cursor_index]) and last_keys_not_having_keytype_changed[-2] not in ('slash', 'colon', 'semicolon'):
                 example_value = delete_in_example(example_value, -len(re.search(r'(?<=[0-9.])\s*/\s*e\s*$', example_value[:cursor_index])[0]))
                 example_value = insert_in_example(example_value, f'e-{keysym}')
             elif symbol_left_from_cursor() == 'e':
                 example_value = insert_in_example(example_value, keysym)
             elif symbol_left_from_cursor() == '!':
                 example_value = insert_in_example(example_value, f'•{keysym}')
+            elif re.search(r'v$', exampled_value()[:cursor_index]) and keysym == '0':
+                example_value = delete_in_example(example_value, -1)
+                example_value = insert_in_example(example_value, 'w')
+            elif re.search(r'w$', exampled_value()[:cursor_index]):
+                example_value = insert_in_example(example_value, f'/{keysym}')
             else:
                 example_value = insert_in_example(example_value, keysym)
         elif keysym == 'Left':
@@ -2830,6 +2857,7 @@ def manage_key_event(key, just_from_added_win=False):
             example_value = insert_in_example(example_value, 'q')
         elif keysym not in special_keys and len(keysym) == 1:
             example_value = insert_in_example(example_value, f'{keysym}')
+        example_value = example_value.replace('U', '|').replace('u', '|')
         if not (keysym.isdigit() or keysym in ('minus', 'BackSpace', 'Delete')) and ('q' in example_value and keysym not in ('q', 'asciitilde') or example_value.count('q') ==  2):
             example_value, _, _, cursor_index, indexes_of_selection, _ = recents['last examples'][-1]
         if keysym != 'apostrophe':
@@ -3577,14 +3605,21 @@ def replace_paste_symbols(string):
 
 
 def get_alternate_log_var(pasted_log_val):
+    pasted_log_val = f'({pasted_log_val})'
+    for j in range(len(pasted_log_val) - 2): # i уже занято
+        if pasted_log_val[j + 1] == '|':
+            pasted_log_val = pasted_log_val[:j + 1] + 'Uu'[bool(re.search(r'[0123456789!)ueπφE]\s*$', pasted_log_val[j])) or bool(re.match(r'\s*(?:[+•:^!\)]|mod|div)', pasted_log_val[j + 2:]))] + pasted_log_val[j + 2:]
+    pasted_log_val = re.sub(fr'((?:by|log)\s*)({num_construct_with_spaces})', r'\1(\2)', pasted_log_val[1:-1].replace('U', '(U').replace('u', 'u)'))
+    # pasted_log_val = re.sub(fr'({construct_with_num_or_roots_and_factorials})', r'(\1)', )
+
     while re.search(r'\(([^()]*)\)', pasted_log_val):
         old_pasted_log_val = pasted_log_val
         pasted_log_val = re.sub(r'log\(([^()]*)\)by\(([^()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', pasted_log_val)
         pasted_log_val = re.sub(r'(?<!by)(?<!log)\(([^()]*)\)', r'&@@&@@\1@&&@&&', pasted_log_val)
         if old_pasted_log_val == pasted_log_val:
             return 'непарность скобок мешает вставке логарифма! ' + pasted_log_val.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
-
-    return pasted_log_val.replace('&@@&@@', '(').replace('@&&@&&', ')')
+    # re.sub(fr'\(({construct_with_num_or_roots_and_factorials})\)', r'\1', )
+    return pasted_log_val.replace('&@@&@@', '(').replace('@&&@&&', ')').replace('(U', '|').replace('u)', '|')
 
 # def modified_pasted_logarythm(log_string, alter=False):  # недоработана и бесит багами
 #     func_construct = r'(?:\s*(?:(?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln+|lg+|√+|))'
@@ -3666,6 +3701,13 @@ def paste_text(*key):
                 item2 = re.sub(r' {2,}', r' ', item2.replace('÷', '/').replace(':', '/').replace('//', 'div').replace('%', 'mod'))
                 item2 = re.sub(r' ?([^0-9\.]) ?', r'\1', item2)
 
+                item2 = f'({item2})'
+                for j in range(len(item2) - 2): # i уже занято
+                    if item2[j + 1] == '|':
+                        item2 = item2[:j + 1] + 'Uu'[bool(re.search(r'[0123456789!)ueπφE]\s*$', item2[j])) or bool(re.match(r'\s*(?:[+•:^!\)]|mod|div)', item2[j + 2:]))] + item2[j + 2:]
+                item2 = item2[1:-1].replace('U', '(U').replace('u', 'u)')
+
+                item2 = re.sub(fr'((?:by|log)\s*)({num_construct_with_spaces})', r'\1(\2)', item2)
                 while re.search(a := r'\(([^()]*)\)', item2):
                     old_cycle_step_item2 = item2
                     item2 = re.sub(r'log\(([^;()]*)(?:;|\)by\(|\)base\()([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', item2)
@@ -3674,8 +3716,9 @@ def paste_text(*key):
                     if old_cycle_step_item2 == item2:
                         item2 = 'ошибка вставки! ' + item2.replace('(', '<').replace(')', '>').replace('&@@&@@', '(').replace('@&&@&&', ')')
                         break
-                item2 = item2.replace('&@@&@@', '(').replace('@&&@&&', ')') # log(2+log(25)by(5);log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))
-                item2 = item2.replace('base', 'by')  # log(log100(15+(log4(1/64)+log8(64))*(5+5))+log(69;r69);2+log(5)by(25))
+                item2 = item2.replace('&@@&@@', '(').replace('@&&@&&', ')')
+                item2 = item2.replace('base', 'by')
+                item2 = item2.replace('(U', '|').replace('u)', '|')
 
                 # item2 = re.sub(r'(?<=[0-9φπeထ)!])E', r'•10^', item2)
                 # item2 = re.sub(r'(?<=[^√])E', r'1•10^', item2).replace('E', '•10^')
@@ -3709,6 +3752,13 @@ def paste_text(*key):
             old_examp_val = example_value
             for item1 in (zip(*replaced_paste), replaced_paste)[prior_side]:
                 example_value = re.sub(r'(?<!di)v(?!\d)', 'v1', example_value)
+                unique_vars = set(re.findall(r'v\d+', example_value))
+                example_value_w = '+'.join(list(unique_vars))
+                for index2, item2 in enumerate(item1):
+                    example_value_w = re.sub(fr'(?<!di)v{index2 + 1}', item2, example_value_w)
+                example_value_w = f'({example_value_w})/{len(unique_vars)}'
+                example_value = re.sub('w', solve_example(example_value_w), example_value)
+
                 for index2, item2 in enumerate(item1):
                     # if re.fullmatch(num_construct, item2) is None: item2 = f'({item2})'
                     example_value = re.sub(fr'(?<!di)v{index2 + 1}', item2, example_value)
@@ -3771,6 +3821,13 @@ def paste_text(*key):
             replaced_paste = re.sub(r' {2,}', r' ', replaced_paste.replace('÷', '/').replace(':', '/').replace('//', 'div').replace('%', 'mod'))
             replaced_paste = re.sub(r' ?([^0-9\.]) ?', r'\1', replaced_paste)
 
+            replaced_paste = f'({replaced_paste})'
+            for j in range(len(replaced_paste) - 2): # i уже занято
+                if replaced_paste[j + 1] == '|':
+                    replaced_paste = replaced_paste[:j + 1] + 'Uu'[bool(re.search(r'[0123456789!)ueπφE]\s*$', replaced_paste[j])) or bool(re.match(r'\s*(?:[+•:^!\)]|mod|div)', replaced_paste[j + 2:]))] + replaced_paste[j + 2:]
+            replaced_paste = replaced_paste[1:-1].replace('U', '(U').replace('u', 'u)')
+
+            replaced_paste = re.sub(fr'((?:by|log)\s*)({num_construct_with_spaces})', r'\1(\2)', replaced_paste)
             while re.search(a := r'\(([^()]*)\)', replaced_paste):
                 old_cycle_step_replaced_paste = replaced_paste
                 replaced_paste = re.sub(r'log\(([^;()]*)(?:;|\)by\(|\)base\()([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', replaced_paste)
@@ -3781,9 +3838,10 @@ def paste_text(*key):
                     break
 
             replaced_paste = re.sub(r'log\(([^;()]*)(?:;|\)by\(|\)base\()([^;()]*)\)', r'log&@@&@@\1@&&@&&by&@@&@@\2@&&@&&', replaced_paste)
-            replaced_paste = re.sub(fr'log{num_construct_with_spaces}\(([^;()]*)\)', r'log&@@&@@#log(2;log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))\2@&&@&&by&@@&@@\1@&&@&&', replaced_paste) #log(log100(15+(log4(1/64)+log8(64))*(5+5))+log(69;r69);2)
+            replaced_paste = re.sub(fr'log{num_construct_with_spaces}\(([^;()]*)\)', r'log&@@&@@\2@&&@&&by&@@&@@\1@&&@&&', replaced_paste) #log(log100(15+(log4(1/64)+log8(64))*(5+5))+log(69;r69);2)
             replaced_paste = replaced_paste.replace('&@@&@@', '(').replace('@&&@&&', ')') #log(2;log100(15+(log4(1/64)+log8(64))*(5+5))+log(r69;69))
             replaced_paste = replaced_paste.replace('base', 'by')
+            replaced_paste = replaced_paste.replace('(U', '|').replace('u)', '|') #log(|2|;|log100(15+|log4(|1/64|)+log8(|64|)|)*|5+5||+log(|r69|;|69|))
 
             # replaced_paste = re.sub(r'(?<=[0-9φπeထ)!])E', '•10^', replaced_paste)
             # replaced_paste = re.sub(r'(?<=[^√])E', '1•10^', replaced_paste).replace('E', '•10^')
@@ -3800,7 +3858,9 @@ def paste_text(*key):
         replaced_paste = replace_paste_symbols(replaced_paste)
     start, end = change_text(replaced_paste)
     if 'log' in replaced_paste:
-        create_tape('info', f'{re.sub(fr'{re.escape(replaced_paste)}$', get_alternate_log_var(replaced_paste), example_value[:cursor_index])}{example_value[cursor_index:]}' + ' – нажми меня, чтобы поменять местами аргументы логарифмов')
+        info_log = f'{re.sub(fr'{re.escape(replaced_paste)}$', get_alternate_log_var(replaced_paste), example_value[:cursor_index])}{example_value[cursor_index:]}'
+        if info_log != replaced_paste:
+            create_tape('info', info_log + ' – нажми меня, чтобы поменять местами аргументы логарифмов')
     return 'break'
 
     
@@ -4220,7 +4280,7 @@ main_win.bind('<Control-Down>', auto_change_size_of_everything)
 
 def on_enter(event):
     global keyboard_layout_memory
-    keyboard_layout_memory = ('en', 'ru')[is_russian_layout()]
+    # keyboard_layout_memory = ('en', 'ru')[is_russian_layout()]
     entry_box.config(bg=('#' + '27' * 3, '#' + 'e2' * 3)[settings['theme'] == 'light'])
     result.config(bg=entry_box.cget('bg'))
     change_width_of_entry(entry_box.get(), entry_box, result)
@@ -4258,23 +4318,32 @@ def focus_in(event):
     config_fg_and_insertbackground()
     if added_win.focus_displayof() is not None:
         main_win.after(50, lambda: blink_fake_cursor(None))
+    if 'virtual_keyboard' in globals():
+        virtual_keyboard.show_keyboard()
     if added_win.title() == 'инструкция':   
         main_win.after(50, lambda: text_entry.yview(top_text_index))
         text_entry.mark_set(INSERT, current_text_index)
         if has_selection:
             text_entry.tag_add("sel", sel_start, sel_end)
     
+
+def added_win_focus_in(*event):
+    main_win.after(30, blink_fake_cursor())
+    main_win.after(30, virtual_keyboard.show_keyboard())
+
     
 def focus_out(event):
     global keyboard_layout_memory
-    if not is_russian_layout() and keyboard_layout_memory == 'ru':
+    if not is_russian_layout() and keyboard_layout_memory == 'ru' and not added_win.focus_displayof():
         hwnd = user32.GetForegroundWindow()
         user32.PostMessageW(hwnd, 0x50, 0, user32.LoadKeyboardLayoutW("00000419", 0x1))
     entry_box.config(bg=('#' + '1f' * 3, '#' + 'ea' * 3)[settings['theme'] == 'light'])
     result.config(bg=entry_box.cget('bg'))
     change_width_of_entry(entry_box.get(), entry_box, result)
-    if added_win.focus_displayof() is not None:
-        blink_fake_cursor()
+    try:
+        virtual_keyboard.hide_keyboard()
+    except:
+        pass
 
 
 def delete_temp_cursor(temp_cursor):
@@ -4375,6 +4444,8 @@ def close_main_win():
         manage_not_main_window_close()
     elif added_win.winfo_viewable():
         manage_not_main_window_close()
+    elif virtual_keyboard._vkb and not virtual_keyboard._vkb.destroyed and virtual_keyboard._vkb.visible:
+        virtual_keyboard.delete_keyboard()
     else:
         recents['win theme alike calc'] = is_dark_theme() == (settings['theme'] == 'dark')
         recents['example before closing'] = example_value   
@@ -4480,7 +4551,7 @@ def check_theme_or_geometry_change():
         widget_under_mouse = tape.winfo_containing(tape.winfo_pointerx(), tape.winfo_pointery())
         if widget_under_mouse and widget_under_mouse.winfo_toplevel() == tape:
             tape_creation_time = time.time()
-        
+
     if curr_time - last_time_main_win_geometry_change > 1 and re.search(calc_geometry_state_change_expression, res_val):
         result.delete(0, END)
         result.insert(END, val_before_last_main_win_geometry_change)
@@ -4493,7 +4564,7 @@ def check_theme_or_geometry_change():
             ctrl_backspace('', no_cut=True)
             main_win.after(20, unbind_left_button)
             example_value = entry_box.get()
-    elif bool(tape) and int(tape_canvas.cget('width')) == 0 and 'абсолютно любое окно закрывают esc и ctrl+w' in tape_info_label.cget('text'):
+    elif bool(tape) and int(tape_canvas.cget('width')) == 0 and ('абсолютно любое окно закрывают esc и ctrl+w' in (a := tape_info_label.cget('text')) or re.search(r'закрыть окно.* можно правой кнопкой мыши', a)):
         if curr_time - tape_creation_time > 15:
             destroy_tape()
     elif curr_time - tape_creation_time > (1.5, 5)[bool(tape) and int(tape_canvas.cget('width')) == 0 and ' – нажми меня, чтобы поменять местами аргументы логарифмов' in tape_info_label.cget('text')]:
