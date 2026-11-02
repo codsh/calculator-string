@@ -1114,7 +1114,7 @@ def modify_info(example):
     if not example:
         return calculator_greeting
     if 'w' in example and not 'v' in example:
-         return '– переменная w - средняя арифметическая всех v, указанных в формуле'
+         return '– w или wN: w - сумма всех v в формуле, N - число, на которое делится w, w0 - среднее арифметическое'
     if example == 'v':
         return '– переменная, после которой пишется порядковый номер ряда или колонки, значения которой нужно подставить вместо переменной'
     if example == calculator_greeting.lower():
@@ -2166,7 +2166,7 @@ def add_hotkeys_from_other_wins_and_import():
     main_win.attributes('-alpha', '0.975')
     main_win.attributes('-topmost', 1)
     pyautogui.hotkey('alt', 'tab')
-    main_win.after(25, lambda: pyautogui.hotkey('alt', 'tab'))
+    main_win.after(50, lambda: pyautogui.hotkey('alt', 'tab'))
 
 
 main_win.after(150, add_hotkeys_from_other_wins_and_import)
@@ -2470,7 +2470,7 @@ def manage_key_event(key, just_from_added_win=False):
         add_to_last_examples_if_selection_or_cursor_change()
     
     if not bypass:
-        keysym = key.keysym if len(key.keysym) > 1 or key.keysym in 'MBTQIPUJCFDA' else key.keysym.lower()
+        keysym = key.keysym if len(key.keysym) > 1 or key.keysym in 'WMBTQIPUJCFDA' else key.keysym.lower()
         keysym_char = key.char if hasattr(key, 'char') else None
             
         if keysym in ('Tab', 'Up', 'Down', 'Control_L', 'Control_R', 'Shift_L', 'Shift_R', 'Alt_L', 'Alt_R', 'Caps_Lock', 'Win_L'):
@@ -2549,8 +2549,8 @@ def manage_key_event(key, just_from_added_win=False):
                 grave_destroy_win = True
         elif keysym == '??' or re.fullmatch(r'[А-Яа-яЁё]', symbol_left_from_cursor()) and key.char in list(letters_and_inwords + syntax):
             example_value = insert_in_example(example_value, key.char)
-        elif keysym == 'v':
-            example_value = insertion_if_division_of_one(symbol_left_from_cursor(), 'v', example_value)
+        elif keysym in ('v', 'W'):
+            example_value = insertion_if_division_of_one(symbol_left_from_cursor(), keysym.lower(), example_value)
             # elif keysym == 'v':
             #     example_value = insert_in_example(example_value, f'{find_the_most_useful_symbol_to_paste(example_value, symbol_left_from_cursor() in '0123456789πφe.)!ထ')}')
             #     example_value = example_value[:max_character_amount]
@@ -2825,8 +2825,6 @@ def manage_key_event(key, just_from_added_win=False):
             elif re.search(r'v$', exampled_value()[:cursor_index]) and keysym == '0':
                 example_value = delete_in_example(example_value, -1)
                 example_value = insert_in_example(example_value, 'w')
-            elif re.search(r'w$', exampled_value()[:cursor_index]):
-                example_value = insert_in_example(example_value, f'/{keysym}')
             else:
                 example_value = insert_in_example(example_value, keysym)
         elif keysym == 'Left':
@@ -3001,6 +2999,7 @@ def supermanage_key_event(key, just_from_added_win=False):
         
 def save_example_to_history(*key, example_to_save=None):
     global history_of_calculations, i_history, i_last_example, added_win, settings, example_value, cursor_index, can_backspace, indexes_of_selection, keyboard_layout_memory
+    recent_flag = False
     set_last_func_is_ctrl_shift_scroll(False)
     set_del_mode(False)
     indexes_of_selection = None
@@ -3032,6 +3031,7 @@ def save_example_to_history(*key, example_to_save=None):
                 recents['recent examples'].append(value_to_add)
             if value_to_add_plus != recents['last examples'][-1]:
                 recents['last examples'].append(value_to_add_plus)
+                recent_flag = True
             if len(recents['last examples']) > 1000:
                 recents['last examples'].pop(0)
             if len(recents['recent examples']) > 100:
@@ -3065,6 +3065,7 @@ def save_example_to_history(*key, example_to_save=None):
                         text_entry.tag_add(SEL, '1.0', 'end')
                     except NameError:
                         pass
+    return recent_flag
 
 
 def insert_values_in_inputs_without_date(new_entry_box_value, new_result_value, date_time_rounding, symbol, new_cursor_index, new_indexes_of_selection, rounding_to='по умолчанию'):
@@ -3682,13 +3683,13 @@ def paste_text(*key):
     elif re.search(r'\t|.+\n.+', replaced_paste):
         replaced_paste = [re.sub(r'\t{2,}', r'\t', i).strip('\t') for i in replaced_paste.splitlines() if i]
         replaced_paste = [i.strip('\t').split('\t') if i.strip('\t').count('\t') else [i] for i in replaced_paste]
-
+        
         for index1, item1 in enumerate(replaced_paste):
             for index2, item2 in enumerate(item1):
                 item2 = item2.replace(' ', '')
                 while re.search(r'[а-яА-ЯЁё\s]+', item2):
                     item2 = re.sub(r'[а-яА-ЯЁё\s]+', r'', item2)
-                item2 = re.sub(fr'({num_construct})(?:radical|root|r)', r'\1#√', item2)
+                item2 = re.sub(fr'({num_construct})(?:radical|root|r(?!ad))', r'\1#√', item2)
                 for i in (('sqrt', '√'), ('cbrt', '3#√')):
                     item2 = re.sub(fr'({num_construct}){i[0]}', fr'\1•{i[1]}', item2)
                 item2 = re.sub(r'radical|root|sqrt|cbrt|(?<!a)r(?!c)', r'√', item2)
@@ -3743,7 +3744,7 @@ def paste_text(*key):
                 if not re.search(r'[а-яА-ЯЁё]', item2):
                     replaced_paste[index1][index2] = replace_paste_symbols(replaced_paste[index1][index2])
 
-        if len(set(list(map(len, replaced_paste)))) == 1 and re.search(r'(?<!di)v', example_value):
+        if len(set(list(map(len, replaced_paste)))) == 1 and re.search(r'(?<!di)v|w', example_value):
             table_data_size = {1: len(replaced_paste[0]), 0: len(replaced_paste)}  # 1 - width, 0 - height (for comftable boolean logic work)
             prior_side = table_data_size[1] > table_data_size[0]
             if not f'v{table_data_size[prior_side]}' in example_value:
@@ -3752,20 +3753,34 @@ def paste_text(*key):
             old_examp_val = example_value
             for item1 in (zip(*replaced_paste), replaced_paste)[prior_side]:
                 example_value = re.sub(r'(?<!di)v(?!\d)', 'v1', example_value)
-                unique_vars = set(re.findall(r'v\d+', example_value))
+                example_value = re.sub(r'w(?!\d)', 'w1', example_value)
+                unique_wars = set(re.findall(r'w\d+', example_value))
+                unique_vars = [f'v{var_indx + 1}' for var_indx in range(len(item1))]
                 example_value_w = '+'.join(list(unique_vars))
                 for index2, item2 in enumerate(item1):
                     example_value_w = re.sub(fr'(?<!di)v{index2 + 1}', item2, example_value_w)
-                example_value_w = f'({example_value_w})/{len(unique_vars)}'
-                example_value = re.sub('w', solve_example(example_value_w), example_value)
+                elder_examp_val = example_value
+                for war in map(lambda x: x[1:], unique_wars):
+                    w_xample = f'({example_value_w})/{(len(unique_vars), war)[war != '0']}'
+                    w_solution = solve_example(w_xample)
+                    example_value = re.sub(f'w{war}', w_solution, example_value)
+                if create_perfect_example(example_value) == solve_example(example_value):
+                    example_value = elder_examp_val
+                    for war in map(lambda x: x[1:], unique_wars):
+                        w_xample = f'{'(' * (war != '1')}{example_value_w}{')' * (war != '1')}{(f'/{len(unique_vars)}', f'/{war}', '')[(war != '0') + (war == '1')]}'
+                        example_value = re.sub(f'w{war}', w_xample, example_value)
+
 
                 for index2, item2 in enumerate(item1):
                     # if re.fullmatch(num_construct, item2) is None: item2 = f'({item2})'
                     example_value = re.sub(fr'(?<!di)v{index2 + 1}', item2, example_value)
                 cursor_index = len(example_value)
                 make_it_future()
+                recent_flag = False
                 if settings['history type'] == 'history':
-                    save_example_to_history()
+                    recent_flag = save_example_to_history()
+                if not recent_flag:
+                    add_to_last_examples_if_selection_or_cursor_change()
                 copied_results.append(result.get().replace('=', ''))
                 new_examp_val = example_value
                 example_value = old_examp_val
@@ -3777,7 +3792,6 @@ def paste_text(*key):
                 if len(copied_res) > 1:
                     copied_res[1] = copied_res[1].replace('(', '').replace(')', '')
 
-                print(copied_res[0])
                 if 0 < abs(float(copied_res[0])) < 1 and len(copied_res) == 1:
                     copied_res[0] = re.search(r'-?\d*\.0*\d{,3}', copied_res[0])[0]
                     if re.search(r'-?\d*\.0*[1-9]\d[1-9]', copied_res[0]):
@@ -3808,7 +3822,8 @@ def paste_text(*key):
         replaced_paste = re.sub(r'\s', '', replaced_paste)
         replaced_paste = re.sub(r'#', ' ', replaced_paste)
         if not re.search(r'[а-яА-ЯЁё]', replaced_paste):
-            replaced_paste = re.sub(fr'({num_construct_with_spaces})\s*(?:radical|root|r)', r'\1#√', replaced_paste)
+            replaced_paste = re.sub(fr'({num_construct_with_spaces})\s*(?:radical|root|r(?!ad))', r'\1#√', replaced_paste)
+            replaced_paste = re.sub(r'rad(ian)?s?|deg(ree)?s?|°', r'', replaced_paste)
             for i in (('sqrt', '√'), ('cbrt', '3#√')):
                 replaced_paste = re.sub(fr'({num_construct_with_spaces})\s*{i[0]}', fr'\1•{i[1]}', replaced_paste)
             replaced_paste = re.sub(r'radical|root|sqrt|cbrt|(?!a)r(?!c)', r'√', replaced_paste)
