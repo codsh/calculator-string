@@ -1840,6 +1840,8 @@ def create_added_win(win_type):
     
     added_win.bind('<Escape>', lambda key: manage_not_main_window_close())
     text_entry.bind('<Escape>', lambda key: manage_not_main_window_close())
+    added_win.bind('<ButtonPress-2>', lambda key: manage_not_main_window_close())
+    text_entry.bind('<ButtonPress-2>', lambda key: manage_not_main_window_close())
     added_win.bind('<ButtonPress-3>', lambda key: manage_not_main_window_close())
     text_entry.bind('<ButtonPress-3>', lambda key: manage_not_main_window_close())
     
@@ -4157,6 +4159,7 @@ def manage_all_of_that_right_button_shit(key):
         manage_not_main_window_close()
     else:
         create_added_win('h')
+main_win.bind('<ButtonPress-2>', close_main_win_with_layout_switching)
 main_win.bind('<ButtonPress-3>', manage_all_of_that_right_button_shit)
         
         

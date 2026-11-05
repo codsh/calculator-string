@@ -70,6 +70,7 @@ HINTS = {
         'm': (r'(mod)', 'mod'),
     },
     'shift': {
+        'w': (r'(переменная суммы w)', 'переменная суммы w'),
         'q': (r'(quadrillion)', 'Quadrillion 10^15'),
         'e': (r'(exp)', 'exp экспонента'),
         't': (r'(Trillion)', 'Trillion 10^12'),
