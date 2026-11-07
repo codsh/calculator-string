@@ -85,7 +85,11 @@ def highlight_i_history_text_and_centralize(i_history):  # здесь была �
         text_entry.focus_force()
         text_entry.tag_add(SEL, f'{i_history + 1}.0', f'{i_history + 4}.0')
         
-        sel_center = (int(text_entry.index('sel.last').split('.')[0]) + int(text_entry.index('sel.first').split('.')[0])) // 2
+        if text_entry.tag_ranges('sel'):
+            sel_center = (int(text_entry.index('sel.last').split('.')[0]) + int(text_entry.index('sel.first').split('.')[0])) // 2
+        else:
+            sel_center = int(text_entry.index('insert').split('.')[0])
+
         first_line = int(text_entry.index("@0,0").split('.')[0])
         last_line = int(text_entry.index(f"@0,{text_entry.winfo_height()}").split('.')[0])
         center_line_shift = (last_line - first_line) // 2
@@ -1840,8 +1844,14 @@ def create_added_win(win_type):
     
     added_win.bind('<Escape>', lambda key: manage_not_main_window_close())
     text_entry.bind('<Escape>', lambda key: manage_not_main_window_close())
-    added_win.bind('<ButtonPress-2>', lambda key: manage_not_main_window_close())
-    text_entry.bind('<ButtonPress-2>', lambda key: manage_not_main_window_close())
+
+    added_win.bind('<ButtonPress-2>', lambda key: on_pushing_wheel_button(key, added_win_is_making_query=True))
+    added_win.bind('<B2-Motion>', lambda key: travel_through_lasts_or_history(key, added_win_is_making_query=True))
+    added_win.bind('<ButtonRelease-2>', lambda key: on_freeing_wheel_button(key, added_win_is_making_query=True))
+    text_entry.bind('<ButtonPress-2>', lambda key: on_pushing_wheel_button(key, added_win_is_making_query=True))
+    text_entry.bind('<B2-Motion>', lambda key: travel_through_lasts_or_history(key, added_win_is_making_query=True))
+    text_entry.bind('<ButtonRelease-2>', lambda key: on_freeing_wheel_button(key, added_win_is_making_query=True))
+
     added_win.bind('<ButtonPress-3>', lambda key: manage_not_main_window_close())
     text_entry.bind('<ButtonPress-3>', lambda key: manage_not_main_window_close())
     
@@ -1947,10 +1957,11 @@ def move_on_lasts(x, y):
     tape_creation_time = time.time()
 
 
-def shift_info_for_more_comftable_reading(key):
+def shift_info_for_more_comftable_reading(key, motion_side=False):
     set_tape_creation_time(key)
     tape_label_width = tape_info_label.winfo_width()
-    tape_info_label.place(x=0 if tape_label_width < WIDTH else a if (b := -abs(WIDTH - tape_label_width) - WIDTH // 120) <= (a := (tape_info_label.winfo_x() + WIDTH // 51 * (1, -1)[key.delta < 0])) <= 0 else (b - WIDTH // 120, 0)[a > 0], y=0)
+    key_delta = key.delta if not motion_side else motion_side
+    tape_info_label.place(x=0 if tape_label_width < WIDTH else a if (b := -abs(WIDTH - tape_label_width) - WIDTH // 120) <= (a := (tape_info_label.winfo_x() + WIDTH // 51 * (1, -1)[key_delta < 0])) <= 0 else (b - WIDTH // 120, 0)[a > 0], y=0)
 
 
 def create_tape(tape_type='undo-redo', info_blit=''):
@@ -1967,6 +1978,9 @@ def create_tape(tape_type='undo-redo', info_blit=''):
         tape.bind('<Motion>', set_tape_creation_time)
         tape.bind('<Shift-MouseWheel>', smart_accelerated_scroll)  # для удобного потягивания по тачпаду
         tape.bind('<MouseWheel>', smart_accelerated_scroll)  # для удобной прокрутки колеса мыши без прожатия shift
+        tape.bind('<ButtonPress-2>', on_pushing_wheel_button)
+        tape.bind('<B2-Motion>', travel_through_lasts_or_history)
+        tape.bind('<ButtonRelease-2>', on_freeing_wheel_button)
     elif (not tape or int(tape_canvas.cget('width')) > 0) and tape_type == 'info':
         if tape and int(tape_canvas.cget('width')) > 0:
             destroy_tape()
@@ -1982,6 +1996,10 @@ def create_tape(tape_type='undo-redo', info_blit=''):
         tape.bind('<Motion>', set_tape_creation_time)
         tape.bind('<Shift-MouseWheel>', shift_info_for_more_comftable_reading)  # для удобного потягивания по тачпаду
         tape.bind('<MouseWheel>', shift_info_for_more_comftable_reading)  # для удобной прокрутки колеса мыши без прожатия shift
+        tape.bind('<ButtonPress-2>', on_pushing_wheel_button)
+        tape.bind('<B2-Motion>', lambda key: travel_through_lasts_or_history(key, just_shift_info_lol=True))
+        tape.bind('<ButtonRelease-2>', on_freeing_wheel_button)
+        
 
     tape_creation_time = time.time()
 
@@ -3280,32 +3298,38 @@ def ctrl_shift_z(*self):
 
 def ctrl_shift_y(*self):
     global i_last_example, i_history, last_example_value, close_history_after_scroll
+    cond_no_draw = not self or 'no drawing' not in self
     if i_history == 'future':
         return 'break'
     if added_win.title() != 'история':
         create_added_win('h')
     i_last_example = 'future'
-    entry_box.delete(0, END)
-    result.delete(0, END)
-    split_history_of_calculations = history_of_calculations.split('\n')
+    if cond_no_draw:
+        entry_box.delete(0, END)
+        result.delete(0, END)
+        split_history_of_calculations = history_of_calculations.split('\n')
     if len(split_history_of_calculations) <= 5:
         return
     if i_history == 'past':
         i_history = highlight_i_history_text_and_centralize(len(split_history_of_calculations) - 4)
-        if not split_history_of_calculations[i_history]:
-            i_history = highlight_i_history_text_and_centralize(i_history + 1)
-        settings['round'] = get_rounding_num(split_history_of_calculations[i_history + 2])
-        insert_values_in_inputs(*split_history_of_calculations[i_history:i_history + 3], '=')
+        if cond_no_draw:
+            if not split_history_of_calculations[i_history]:
+                i_history = highlight_i_history_text_and_centralize(i_history + 1)
+            settings['round'] = get_rounding_num(split_history_of_calculations[i_history + 2])
+            insert_values_in_inputs(*split_history_of_calculations[i_history:i_history + 3], '=')
     elif i_history > 3:
         i_history = highlight_i_history_text_and_centralize(i_history - 4)
-        settings['round'] = get_rounding_num(split_history_of_calculations[i_history + 2])
-        insert_values_in_inputs(*split_history_of_calculations[i_history:i_history + 3], '=')
+        if cond_no_draw:
+            settings['round'] = get_rounding_num(split_history_of_calculations[i_history + 2])
+            insert_values_in_inputs(*split_history_of_calculations[i_history:i_history + 3], '=')
     else:
         return_rounding_to_future_state_while_making_i_history_future()
-        solved_example = solve_example(last_example_value)
-        insert_values_in_inputs(last_example_value, solved_example, 'Последний введённый пример', '=' if is_num(solved_example, correct_answer_num_symbols) else ' ' * bool(last_example_value))
-    change_width_of_entry(entry_box.get(), entry_box, result)
-    config_fg_and_insertbackground()
+        if not self or 'no drawing' not in self:
+            solved_example = solve_example(last_example_value)
+            insert_values_in_inputs(last_example_value, solved_example, 'Последний введённый пример', '=' if is_num(solved_example, correct_answer_num_symbols) else ' ' * bool(last_example_value))
+    if cond_no_draw:
+        change_width_of_entry(entry_box.get(), entry_box, result)
+        config_fg_and_insertbackground()
     # if close_history_after_scroll: added_win.after_cancel(close_history_after_scroll)
     # close_history_after_scroll = added_win.after(2000, manage_not_main_window_close)
     
@@ -3969,6 +3993,52 @@ def move_main_win(event):
     if tape: resize_and_retheme_canvas_drawings()
 
 
+pushing_wheel_time = last_moving_with_deeds_time = 0
+pre_x_wheel, pre_y_wheel = None, None
+wheel_sense_type = None
+def on_pushing_wheel_button(event, added_win_is_making_query=False):
+    global pushing_wheel_time, push_wheel_x_coord, push_wheel_y_coord, x_wheel, y_wheel
+    pushing_wheel_time = time.time()
+    if not added_win_is_making_query:
+        set_last_func_is_ctrl_shift_scroll(False)
+        set_del_mode(False)
+    push_wheel_x_coord, push_wheel_y_coord = event.x_root, event.y_root
+    x_wheel, y_wheel = push_wheel_x_coord, push_wheel_y_coord
+    
+    
+def on_freeing_wheel_button(event, added_win_is_making_query=False):
+    global pushing_wheel_time, wheel_sense_type
+    if time.time() - pushing_wheel_time < 0.1:
+        if not added_win_is_making_query:
+            close_main_win_with_layout_switching()
+        else:
+            manage_not_main_window_close()
+    wheel_sense_type = None
+
+
+def travel_through_lasts_or_history(event, just_shift_info_lol=False, added_win_is_making_query=False):
+    global push_wheel_x_coord, push_wheel_y_coord, wheel_sense_type, pre_x_wheel, pre_y_wheel, x_wheel, y_wheel
+    global last_moving_with_deeds_time
+    if pre_x_wheel is None or pre_y_wheel is None:
+        pre_x_wheel, pre_y_wheel = x_wheel, y_wheel
+    x_wheel, y_wheel = event.x_root, event.y_root
+    if not wheel_sense_type and (push_wheel_y_coord - y_wheel) ** 2 + (push_wheel_x_coord - x_wheel) ** 2 > HEIGHT ** 2:
+        wheel_sense_type = 'horizontal' if x_wheel != push_wheel_x_coord and abs((y_wheel - push_wheel_y_coord) / (x_wheel - push_wheel_x_coord)) < 2.7 else 'vertical'
+    if (pre_y_wheel - y_wheel) ** 2 + (pre_x_wheel - x_wheel) ** 2 > (HEIGHT // 4) ** 2:
+        if wheel_sense_type == 'horizontal':
+            if added_win_is_making_query:
+                move_added_win_scrolling_horizontally(event, delta=x_wheel - pre_x_wheel)
+            elif just_shift_info_lol:
+                shift_info_for_more_comftable_reading(event, motion_side=(-1, 1)[x_wheel > pre_x_wheel])
+            else:
+                (ctrl_y, ctrl_z)[x_wheel < pre_x_wheel]()
+            print(1)
+        elif wheel_sense_type == 'vertical' and not added_win_is_making_query:
+            print(2)
+            (ctrl_shift_z, ctrl_shift_y)[y_wheel < pre_y_wheel if settings['y'] <= recents['mid'] else y_wheel > pre_y_wheel]()
+        pre_x_wheel, pre_y_wheel = x_wheel, y_wheel
+
+
 def move_added_win(event):
     x, y, pre_x, pre_y = event.x_root, event.y_root, *recents['mouse coords'].values()
     if pre_x not in (-1, -2):
@@ -3988,21 +4058,23 @@ def move_added_win(event):
     return 'break'
 
 
-def move_added_win_scrolling_horizontally(event):
+def move_added_win_scrolling_horizontally(event, delta=None):
+    global push_wheel_y_coord
     pre_x_coord = x_coord = added_win.winfo_x()
-    delta_event = event.delta // 3
+    delta_event = event.delta // 3 if delta is None else delta
     x_coord += delta_event
     if x_coord < 0:
         x_coord = 0
     if x_coord > MAX_X_COORD:
         x_coord = MAX_X_COORD
-    if x_coord not in (0, MAX_X_COORD):
+    if x_coord not in (0, MAX_X_COORD) and delta_event != delta and delta_event != 0:
         x_coord -= (x_coord - (MIN_X_COORD - 8 * 2)) % delta_event  # чтобы окно истории встало точно над строкой со смещение в полоску
     x_coord_diff = x_coord - pre_x_coord
     setting_x(x_coord)
     
     added_win.geometry(f'{added_win.winfo_width()}x{MAX_COORD - 2 * TASKBAR_HEIGHT}+{x_coord}+0')
-    _mouse_move_to(event.x_root + x_coord_diff, event.y_root)
+    _mouse_move_to(event.x_root + (x_coord_diff, x_coord_diff // 3)[delta is not None], event.y_root)
+    return 'break'
     
     
 def has_selection():
@@ -4159,7 +4231,7 @@ def manage_all_of_that_right_button_shit(key):
         manage_not_main_window_close()
     else:
         create_added_win('h')
-main_win.bind('<ButtonPress-2>', close_main_win_with_layout_switching)
+# main_win.bind('<ButtonPress-2>', close_main_win_with_layout_switching)
 main_win.bind('<ButtonPress-3>', manage_all_of_that_right_button_shit)
         
         
@@ -4279,8 +4351,12 @@ main_win.bind('<ButtonRelease-1>', on_freeing_left_button)
 main_win.bind('<ButtonRelease-2>', set_main_focus)
 # main_win.bind('<ButtonRelease-3>', set_main_focus)
 
+
 main_win.bind('<ButtonPress-1>', on_pushing_left_button)
 main_win.bind('<B1-Motion>', move_main_win)
+main_win.bind('<ButtonPress-2>', on_pushing_wheel_button)
+main_win.bind('<B2-Motion>', travel_through_lasts_or_history)
+main_win.bind('<ButtonRelease-2>', on_freeing_wheel_button)
 
 main_win.bind('<Control-Shift-Up>', lambda key: None)  # не удалять! поддерживает автономию перед <Control-Up>
 main_win.bind('<Control-Shift-Down>', lambda key: None)  # не удалять! поддерживает автономию перед <Control-Down>
