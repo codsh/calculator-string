@@ -3460,8 +3460,8 @@ cursor_shift_intermediate_steps_at_del_mode = []
 def define_future_of_cursor(side):
     replaced_abs_value = replace_abs_signs(example_value)
     temp_cursor_index = max(0, cursor_index)
-    text_token = (re.match(fr'\s*(?:(?:[0-9]*-)?{letters_and_not_example_like_inwords}+[0-9]*{syntax}*|{letters_and_inwords}*{syntax}+)', replaced_abs_value[temp_cursor_index:]),
-                  re.search(fr'(?:(?:[0-9]*-)?{letters_and_not_example_like_inwords}+[0-9]*{syntax}*|{letters_and_inwords}*{syntax}+)\s*$', replaced_abs_value[:temp_cursor_index]))[side == 'left']
+    text_token = (re.match(fr'\s*(?:(?:[0-9]*-)?{letters_and_not_example_like_inwords}+[0-9]*{syntax}*|{letters_and_inwords}*{syntax}+|ထ+)', replaced_abs_value[temp_cursor_index:]),
+                  re.search(fr'(?:(?:[0-9]*-)?{letters_and_not_example_like_inwords}+[0-9]*{syntax}*|{letters_and_inwords}*{syntax}+|ထ+)\s*$', replaced_abs_value[:temp_cursor_index]))[side == 'left']
     
     i = len(text_token[0]) if text_token is not None and text_token[0] not in ('-', '/', '!') else None
     if side in ('right', 'left') and i:
@@ -4974,4 +4974,9 @@ main_win.bind('<Control-t>', change_theme)
 main_win.bind('<Control-T>', change_theme)
 
 calculate_result()
+
+if time.time() - recents['closing time'][-1] > 15:
+    change_text('', 0, len(entry_box.get()))
+    ROUND_ANSWER_TO_MANUALLY = settings['round'] = 'по умолчанию'
+
 main_win.mainloop()
