@@ -3773,10 +3773,12 @@ def paste_text(*key):
         if len(set(list(map(len, replaced_paste)))) == 1 and re.search(r'(?<!di)v|w', example_value):
             table_data_size = {1: len(replaced_paste[0]), 0: len(replaced_paste)}  # 1 - width, 0 - height (for comftable boolean logic work)
             prior_side = table_data_size[1] > table_data_size[0]
-            if not f'v{table_data_size[prior_side]}' in example_value:
+            old_examp_val = example_value
+            example_value = re.sub(r'(?<!di)v(?!\d)', 'v1', example_value)
+            examp_max_int_var = max(map(lambda x: int(x[1:]), set(re.findall(r'(?<!di)v\d+', example_value))))
+            if not f'v{table_data_size[prior_side]}' in example_value and not examp_max_int_var > table_data_size[not prior_side]:
                 prior_side = not prior_side
             copied_results = []
-            old_examp_val = example_value
             for item1 in (zip(*replaced_paste), replaced_paste)[prior_side]:
                 example_value = re.sub(r'(?<!di)v(?!\d)', 'v1', example_value)
                 example_value = re.sub(r'w(?!\d)', 'w1', example_value)
@@ -4008,7 +4010,10 @@ def on_pushing_wheel_button(event, added_win_is_making_query=False):
     
 def on_freeing_wheel_button(event, added_win_is_making_query=False):
     global pushing_wheel_time, wheel_sense_type
-    if time.time() - pushing_wheel_time < 0.1:
+    if deletion_mode:
+        cut_text(key)
+        set_del_mode(False)
+    elif time.time() - pushing_wheel_time < 0.3:
         if not added_win_is_making_query:
             close_main_win_with_layout_switching()
         else:
@@ -4018,23 +4023,21 @@ def on_freeing_wheel_button(event, added_win_is_making_query=False):
 
 def travel_through_lasts_or_history(event, just_shift_info_lol=False, added_win_is_making_query=False):
     global push_wheel_x_coord, push_wheel_y_coord, wheel_sense_type, pre_x_wheel, pre_y_wheel, x_wheel, y_wheel
-    global last_moving_with_deeds_time
+    global last_moving_with_deeds_time, cursor_shift_intermediate_steps_at_del_mode
     if pre_x_wheel is None or pre_y_wheel is None:
         pre_x_wheel, pre_y_wheel = x_wheel, y_wheel
     x_wheel, y_wheel = event.x_root, event.y_root
     if not wheel_sense_type and (push_wheel_y_coord - y_wheel) ** 2 + (push_wheel_x_coord - x_wheel) ** 2 > HEIGHT ** 2:
         wheel_sense_type = 'horizontal' if x_wheel != push_wheel_x_coord and abs((y_wheel - push_wheel_y_coord) / (x_wheel - push_wheel_x_coord)) < 2.7 else 'vertical'
-    if (pre_y_wheel - y_wheel) ** 2 + (pre_x_wheel - x_wheel) ** 2 > (HEIGHT // 4) ** 2:
+    if abs(((pre_y_wheel - y_wheel), (pre_x_wheel - x_wheel))[wheel_sense_type == 'horizontal']) > (HEIGHT // 4):
         if wheel_sense_type == 'horizontal':
             if added_win_is_making_query:
                 move_added_win_scrolling_horizontally(event, delta=x_wheel - pre_x_wheel)
             elif just_shift_info_lol:
                 shift_info_for_more_comftable_reading(event, motion_side=(-1, 1)[x_wheel > pre_x_wheel])
             else:
-                (ctrl_y, ctrl_z)[x_wheel < pre_x_wheel]()
-            print(1)
+                main_win.event_generate('<Shift-MouseWheel>', delta=(121, -121)[x_wheel > pre_x_wheel])
         elif wheel_sense_type == 'vertical' and not added_win_is_making_query:
-            print(2)
             (ctrl_shift_z, ctrl_shift_y)[y_wheel < pre_y_wheel if settings['y'] <= recents['mid'] else y_wheel > pre_y_wheel]()
         pre_x_wheel, pre_y_wheel = x_wheel, y_wheel
 
@@ -4337,7 +4340,7 @@ def backspace_undo_handler(key):
             scroll_timeout = 0
         config_fg_and_insertbackground()
         if indexes_of_selection and indexes_of_selection['start'] != indexes_of_selection['end']:
-            sel_del_info = f'удалить {example_value[indexes_of_selection['start']:indexes_of_selection['end']]} правой кнопкой'
+            sel_del_info = f'удалить {example_value[indexes_of_selection['start']:indexes_of_selection['end']]} {('правой кнопкой', 'отпустив колёсико')[abs(key.delta) == 121]}'
             create_tape(tape_type='info', info_blit=sel_del_info)
             resize_and_retheme_canvas_drawings(info_blit=sel_del_info)
         elif not indexes_of_selection or indexes_of_selection['start'] == indexes_of_selection['end']:
