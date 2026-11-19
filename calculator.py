@@ -44,11 +44,119 @@ GetWindowTextW = user32.GetWindowTextW
 GetClassNameW = user32.GetClassNameW
 SetForegroundWindow = user32.SetForegroundWindow
 
+
+def place_calc_below_taskbar():
+    """Ставит калькулятор поверх всех обычных окон, но строго ПОД панелью задач."""
+    try:
+        taskbar_hwnd = user32.FindWindowW("Shell_TrayWnd", None)
+        calc_hwnd = (
+            user32.GetParent(main_win.winfo_id()) or main_win.winfo_id()
+        )
+
+        if taskbar_hwnd and calc_hwnd:
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_NOACTIVATE = 0x0010
+            # Передаем taskbar_hwnd вместо HWND_TOPMOST — окно встанет ровно под панелью задач
+            user32.SetWindowPos(
+                calc_hwnd,
+                taskbar_hwnd,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            )
+    except Exception:
+        pass
+
+
+def set_win11_border(window, show=True):
+    """
+    Включает или полностью скрывает системную рамку 1px в Windows 11.
+    show=True  -> вернуть стандартную рамку (0xFFFFFFFF)
+    show=False -> убрать рамку полностью (0xFFFFFFFE)
+    """
+    try:
+        window.update_idletasks()
+        hwnd = user32.GetParent(window.winfo_id()) or window.winfo_id()
+        DWMWA_BORDER_COLOR = 34
+        color = ctypes.c_uint(0xFFFFFFFF if show else 0xFFFFFFFE)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd, DWMWA_BORDER_COLOR, ctypes.byref(color), ctypes.sizeof(color)
+        )
+    except Exception:
+        pass
+
+
+def set_win11_corners(window, small=False, show_border=True):
+    """
+    Включает нативное скругление углов Windows 11 с аппаратным сглаживанием и тенью.
+    small=False -> стандартное скругление (8px, DWMWCP_ROUND = 2)
+    small=True  -> малое скругление (4px, DWMWCP_ROUNDSMALL = 3)
+    show_border -> True (системная рамка 1px) / False (без рамки)
+    """
+    try:
+        window.update_idletasks()
+        hwnd = user32.GetParent(window.winfo_id())
+        if not hwnd:
+            hwnd = window.winfo_id()
+
+        # 1. Скругление углов (код 33)
+        DWMWA_WINDOW_CORNER_PREFERENCE = 33
+        pref = ctypes.c_int(3 if small else 2)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            ctypes.byref(pref),
+            ctypes.sizeof(pref),
+        )
+
+        # 2. Управление 1-пиксельной системной обводкой (код 34)
+        DWMWA_BORDER_COLOR = 34
+        # 0xFFFFFFFF = цвет по умолчанию (есть рамка), 0xFFFFFFFE = без рамки
+        border_val = 0xFFFFFFFF if show_border else 0xFFFFFFFE
+        border_color = ctypes.c_uint(border_val)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR,
+            ctypes.byref(border_color),
+            ctypes.sizeof(border_color),
+        )
+    except Exception:
+        pass
+
+
+def disable_win11_corners(window):
+    """
+    Полностью отключает скругление углов в Windows 11, делая их острыми (прямыми).
+    """
+    try:
+        window.update()
+        hwnd = user32.GetParent(window.winfo_id())
+        if not hwnd:
+            hwnd = window.winfo_id()
+
+        DWMWA_WINDOW_CORNER_PREFERENCE = 33
+        DWMWCP_DONOTROUND = 1  # Код 1 — запретить скругление (острые углы)
+
+        preference = ctypes.c_int(DWMWCP_DONOTROUND)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            ctypes.byref(preference),
+            ctypes.sizeof(preference),
+        )
+    except Exception:
+        pass
+
+
 def create_fake_main_win():
     global fake_main_win
     fake_main_win = Toplevel()
     fake_main_win.title(main_win.title())
     fake_main_win['bg'] = main_win['bg']
+    set_win11_corners(fake_main_win, small=False, show_border=True)
 
     fake_main_win.wm_attributes('-topmost', main_win.wm_attributes('-topmost'))
     fake_main_win.attributes('-alpha', main_win.attributes('-alpha'))
@@ -130,7 +238,7 @@ def change_width_of_entry(text, entry1, entry2):
         entry2.place(x=entry_text_length + 2, y=0, width=(WIDTH - 2) - (entry_text_length + 1), height=HEIGHT)
     
     
-def change_size_of_everything(scale, scale_was_zero=False, change_result=True):
+def change_size_of_everything(scale, scale_was_zero=False, change_result=True, wait_till_win_opens=0):
     global max_character_amount, place_coords, last_time_main_win_geometry_change, val_before_last_main_win_geometry_change, tape
     global WIDTH, HEIGHT, MIN_X_COORD, MAX_COORD, MAX_X_COORD
     max_character_amount = (174, 174, 152, 120, 99, 71)[scale]
@@ -139,12 +247,15 @@ def change_size_of_everything(scale, scale_was_zero=False, change_result=True):
     MIN_X_COORD = screen_width // 12
 
     WIDTH = screen_width - 2 * MIN_X_COORD
-    MAX_COORD = screen_height - get_taskbar_height() - HEIGHT
+    MAX_COORD = screen_height - get_taskbar_height() - HEIGHT + 1
     MAX_X_COORD = screen_width - MIN_X_COORD - 8 * 2
     if abs(settings['y'] - recents['mid']) <= HEIGHT and (settings['scale'] != scale or scale_was_zero):
         setting_y(MAX_COORD // 2)
     if abs(settings['y'] - recents['low']) <= HEIGHT and (settings['scale'] != scale or scale_was_zero):
         setting_y(MAX_COORD)
+    if settings['y'] == MAX_COORD:
+        place_calc_below_taskbar()
+
 
     recents['low'], recents['mid'], recents['top'] = MAX_COORD, MAX_COORD // 2, 0
     place_coords = (recents['low'], recents['mid'], recents['top'])
@@ -159,8 +270,8 @@ def change_size_of_everything(scale, scale_was_zero=False, change_result=True):
             finish_to_help_win()
     change_width_of_entry(entry_box.get(), entry_box, result)
     main_win.geometry(f'{WIDTH}x{HEIGHT}+{MIN_X_COORD}+{settings['y']}')
-    if tape:
-        tape.geometry(f'{WIDTH}x{HEIGHT}+{MIN_X_COORD}+{settings['y'] - HEIGHT}')
+    if is_tape_alive():
+        tape.geometry(f'{WIDTH}x{HEIGHT}+{MIN_X_COORD}+{settings['y'] - HEIGHT + 1}')
         resize_and_retheme_canvas_drawings()
     close_label.place(x=WIDTH - HEIGHT // 3, y=1, width=HEIGHT // 3 - 1, height=HEIGHT // 3 - 1)
     close_label.config(font=('Arial', HEIGHT // 3 - 1))
@@ -175,6 +286,9 @@ def change_size_of_everything(scale, scale_was_zero=False, change_result=True):
         last_time_main_win_geometry_change = time.time()
     if scale:
         settings['scale'] = scale
+        main_win.after(wait_till_win_opens, lambda: set_win11_corners(main_win, small=False, show_border=True))
+    else:
+        disable_win11_corners(main_win)
 
 
 history_of_calculations, recents, settings = None, None, None
@@ -570,7 +684,7 @@ max_character_amount = (174, 174, 152, 120, 99, 71)[settings['scale']]
 HEIGHT = screen_width // (201, 81, 71, 61, 51, 41)[settings['scale']]
 
 WIDTH = screen_width - 2 * MIN_X_COORD
-MAX_COORD = screen_height - TASKBAR_HEIGHT - HEIGHT
+MAX_COORD = screen_height - TASKBAR_HEIGHT - HEIGHT + 1
 
 if recents['low'] != MAX_COORD:
     if abs(settings['y'] - recents['mid']) <= HEIGHT * 4:
@@ -1966,8 +2080,8 @@ def shift_info_for_more_comftable_reading(key, motion_side=False):
 
 def create_tape(tape_type='undo-redo', info_blit=''):
     global tape, tape_canvas, tape_creation_time, tape_info_label, example_value
-    if (not tape or int(tape_canvas.cget('width')) == 0) and tape_type == 'undo-redo':
-        if tape and int(tape_canvas.cget('width')) == 0:
+    if (not is_tape_alive() or int(tape_canvas.cget('width')) == 0) and tape_type == 'undo-redo':
+        if is_tape_alive() and int(tape_canvas.cget('width')) == 0:
             destroy_tape()
         create_tape_base(main_win['bg'])
         
@@ -1981,8 +2095,8 @@ def create_tape(tape_type='undo-redo', info_blit=''):
         tape.bind('<ButtonPress-2>', on_pushing_wheel_button)
         tape.bind('<B2-Motion>', travel_through_lasts_or_history)
         tape.bind('<ButtonRelease-2>', on_freeing_wheel_button)
-    elif (not tape or int(tape_canvas.cget('width')) > 0) and tape_type == 'info':
-        if tape and int(tape_canvas.cget('width')) > 0:
+    elif (not is_tape_alive() or int(tape_canvas.cget('width')) > 0) and tape_type == 'info':
+        if is_tape_alive() and int(tape_canvas.cget('width')) > 0:
             destroy_tape()
         create_tape_base(entry_box.cget('bg'))
         
@@ -1992,7 +2106,7 @@ def create_tape(tape_type='undo-redo', info_blit=''):
         tape_info_label.place(x=0, y=0)
         resize_and_retheme_canvas_drawings()
         tape.bind('<ButtonPress-1>', lambda event: None if not (a := ' – нажми меня, чтобы поменять местами аргументы логарифмов') in info_blit
-                  else (entry_box.delete(0, END), entry_box.insert(END, info_blit.split(' – ')[0]), calculate_result(), _mouse_move_to(event.x_root, event.y_root + (-HEIGHT, HEIGHT)[settings['y'] - HEIGHT > 0]), destroy_tape()))
+                  else (entry_box.delete(0, END), entry_box.insert(END, info_blit.split(' – ')[0]), calculate_result(), _mouse_move_to(event.x_root, event.y_root + (-HEIGHT + 1, HEIGHT - 1)[settings['y'] - HEIGHT + 1 > 0]), destroy_tape()))
         tape.bind('<Motion>', set_tape_creation_time)
         tape.bind('<Shift-MouseWheel>', shift_info_for_more_comftable_reading)  # для удобного потягивания по тачпаду
         tape.bind('<MouseWheel>', shift_info_for_more_comftable_reading)  # для удобной прокрутки колеса мыши без прожатия shift
@@ -2007,19 +2121,41 @@ def create_tape(tape_type='undo-redo', info_blit=''):
 def create_tape_base(tape_color):
     global tape
     tape = Toplevel()
-    tape.geometry(f'{WIDTH}x{HEIGHT}+{MIN_X_COORD}+{settings['y'] - HEIGHT}')
+    tape.geometry(f'{WIDTH}x{HEIGHT}+{MIN_X_COORD}+{settings['y'] - HEIGHT + 1}')
     tape.overrideredirect(True)
+    set_win11_corners(tape, small=False, show_border=True)
     tape.wm_attributes('-topmost', 1)
     tape.attributes('-alpha', '0.95')
     tape['bg'] = tape_color
 
 
+def is_tape_alive():
+    """Безопасно проверяет, существуют ли и сама лента, и её холст в Tcl/Tk."""
+    try:
+        return bool(
+            tape
+            and tape.winfo_exists()
+            and 'tape_canvas' in globals()
+            and tape_canvas
+            and tape_canvas.winfo_exists()
+        )
+    except Exception:
+        return False
+
+
+
 def destroy_tape():
     global tape, tape_creation_time, tape_canvas
-    if tape:
-        tape.destroy()
+    try:
+        if tape and tape.winfo_exists():
+            tape.destroy()
+    except Exception:
+        pass
     tape = None
-    tape_creation_time = 10 ** 100
+    tape_canvas = None
+    tape_creation_time = 10**100
+
+
 
 
 def tape_text_color(light_up_indxs, lst, indx):
@@ -2035,7 +2171,7 @@ def on_leave_rect(rect_tag):
 
 def resize_and_retheme_canvas_drawings(info_blit=''):
     global tape_canvas, tape_creation_time, tape_info_label, oval_center_x, oval_center_y, oval_radius
-    tape.geometry(f'{WIDTH}x{HEIGHT}+{MIN_X_COORD}+{settings['y'] - HEIGHT if settings['y'] - HEIGHT > 0 else settings['y'] + HEIGHT}')
+    tape.geometry(f'{WIDTH}x{HEIGHT}+{MIN_X_COORD}+{settings['y'] - HEIGHT + 1 if settings['y'] - HEIGHT + 1 > 0 else settings['y'] + HEIGHT - 1}')
     if int(tape_canvas.cget('width')) > 0:
         tape_canvas.config(width=WIDTH, height=HEIGHT, bg=entry_box.cget('bg'))
         tape_canvas.delete('all')
@@ -2090,7 +2226,6 @@ def resize_and_retheme_canvas_drawings(info_blit=''):
     else:
         tape.config(bg=entry_box.cget('bg'))
         tape_info_label.config(text=info_blit if info_blit else tape_info_label.cget('text'), fg=entry_box.cget('fg'), bg=entry_box.cget('bg'), font=('Arial', HEIGHT // 2))
-
     tape_creation_time = time.time()
     
     
@@ -2101,7 +2236,7 @@ def manage_not_main_window_close():
     added_win.title(invisible_win_title)
     entry_box.focus_set()
     beauty_letter_tape.wm_attributes('-topmost', 1)
-    if bool(tape) and int(tape_canvas.cget('width')) == 0 and re.search(r'закрыть окно.*можно правой кнопкой мыши', tape_info_label.cget('text')):
+    if is_tape_alive() and int(tape_canvas.cget('width')) == 0 and re.search(r'закрыть окно.*можно правой кнопкой мыши', tape_info_label.cget('text')):
         destroy_tape()
 
 ROUND_ANSWER_TO = 18
@@ -2133,6 +2268,7 @@ example_value = entry_box.get()
 
 tape_creation_time = 10 ** 100
 tape = None
+tape_canvas = None
 create_added_win(None)
 
 close_label = Label(main_win, text='×', font=('Arial', HEIGHT // 3 - 1), padx=0, pady=0, borderwidth=0, highlightthickness=0)
@@ -2145,7 +2281,7 @@ hide_label.place(x=WIDTH - 2 * HEIGHT // 3 + 1, y=1, width=HEIGHT // 3 - 1, heig
 hide_label.bind('<Enter>', lambda key: hide_label.config(bg=main_win['bg']))
 hide_label.bind('<Leave>', lambda key: hide_label.config(bg=result.cget('bg')))
 
-change_size_of_everything(scale=settings['scale'])
+change_size_of_everything(scale=settings['scale'], wait_till_win_opens=10)
 
 main_win.geometry(f'{WIDTH}x{HEIGHT}+{MIN_X_COORD}+{settings['y']}')
 
@@ -3013,7 +3149,7 @@ def supermanage_key_event(key, just_from_added_win=False):
     manage_key_event(key, just_from_added_win)
     if hasattr(key, 'keysym') and key.keysym not in ('apostrophe', 'quotedbl', 'Escape', 'Tab', 'Up', 'Down', 'Control_L', 'Control_R', 'Shift_L', 'Shift_R', 'Alt_L', 'Alt_R', 'Caps_Lock', 'Win_L', 'y', 'z', 'Y', 'Z'):
         add_to_last_examples_if_selection_or_cursor_change()
-        if tape and int(tape_canvas.cget('width')) == 0:
+        if is_tape_alive() and int(tape_canvas.cget('width')) == 0:
             destroy_tape()
         
         
@@ -3492,7 +3628,7 @@ def define_future_of_cursor(side):
             temp_cursor_index += i
             return temp_cursor_index
         
-        temp_cursor_index += len(a := re.match(r'v\d*|\d*\.?\d*(?:[Ee]-?\d*\.?\d*)?|[φπe]', replaced_abs_value[temp_cursor_index:])[0])
+        temp_cursor_index += len(a := re.match(r'[vw]\d*|\d*\.?\d*(?:[Ee]-?\d*\.?\d*)?|[φπe]', replaced_abs_value[temp_cursor_index:])[0])
         return temp_cursor_index
     
     elif side == 'left':
@@ -3514,7 +3650,7 @@ def define_future_of_cursor(side):
             temp_cursor_index = i
 
         else:
-            temp_cursor_index -= len(re.search(r'(?:(?<![a-df-uw-zA-DF-UW-Z])v\d*|\d*\.?\d*(?:[Ee]-?\d*\.?\d*)?|[φπe])$', replaced_abs_value[:temp_cursor_index])[0])
+            temp_cursor_index -= len(re.search(r'(?:(?<![a-df-uw-zA-DF-UW-Z])[vw]\d*|\d*\.?\d*(?:[Ee]-?\d*\.?\d*)?|[φπe])$', replaced_abs_value[:temp_cursor_index])[0])
             if re.search(r'(?:\(|U|\[|^)-$', replaced_abs_value[:temp_cursor_index]):
                 temp_cursor_index -= 1
         temp_cursor_index -= len(re.search(r'(?:(?:(?<!mo)d(?!iv))?(?:arc)?(?:sin|cos|c?tg)?|ln|lg|)$', replaced_abs_value[:temp_cursor_index])[0])
@@ -3992,7 +4128,7 @@ def move_main_win(event):
     result.delete(0, END)
     # стрелки не из ascii дофига жрут (1200 мс), так что теперь из ascii
     result.insert(END, f'{' ' * bool(entry_box.get())}y={f'{y_coord}↑'.ljust(len(str(MAX_COORD)) + 1)}  –{MAX_COORD - y_coord}↓ (пара значений y="пикселей от верха"  –"низа")')
-    if tape: resize_and_retheme_canvas_drawings()
+    if is_tape_alive(): resize_and_retheme_canvas_drawings()
 
 
 pushing_wheel_time = last_moving_with_deeds_time = 0
@@ -4266,7 +4402,7 @@ main_win.bind('<Control-slash>', lambda key: create_added_win('?'))
 
 
 def press_tape_by_keyboard(key):
-    if tape and int(tape_canvas.cget('width')) == 0 and 'нажми меня' in tape_info_label.cget('text'):
+    if is_tape_alive() and int(tape_canvas.cget('width')) == 0 and 'нажми меня' in tape_info_label.cget('text'):
         _mouse_move_to(key.x_root, settings['y'] + HEIGHT // 2 + (HEIGHT, -HEIGHT)[settings['y'] - HEIGHT > 0])
         _mouse_click()
         main_win.after(50, lambda: _mouse_move_to(key.x_root, key.y_root))
@@ -4422,6 +4558,9 @@ def focus_in(event):
         text_entry.mark_set(INSERT, current_text_index)
         if has_selection:
             text_entry.tag_add("sel", sel_start, sel_end)
+    set_win11_border(main_win, show=True)
+    if settings['y'] == MAX_COORD:
+        place_calc_below_taskbar()
     
 
 def added_win_focus_in(*event):
@@ -4437,6 +4576,7 @@ def focus_out(event):
     entry_box.config(bg=('#' + '1f' * 3, '#' + 'ea' * 3)[settings['theme'] == 'light'])
     result.config(bg=entry_box.cget('bg'))
     change_width_of_entry(entry_box.get(), entry_box, result)
+    set_win11_border(main_win, show=False)
     try:
         virtual_keyboard.hide_keyboard()
     except:
@@ -4599,6 +4739,7 @@ def change_theme(event):
         if not beauty_letter_tape:
             beauty_letter_tape = Toplevel()
             beauty_letter_tape.overrideredirect(True)
+            set_win11_corners(beauty_letter_tape, small=False, show_border=True)
             beauty_letter_tape_canvas = Canvas(beauty_letter_tape, bg=result.cget('bg'), borderwidth=0, highlightthickness=0)
             beauty_letter_tape_canvas.pack(fill="both", expand=True)
         beauty_letter_tape.wm_attributes('-topmost', 1)
@@ -4613,7 +4754,7 @@ def change_theme(event):
         text_entry.tag_add(SEL, start_sel, end_sel)
 
         if added_win.title() != invisible_win_title: set_window_theme_border(window=added_win, is_dark_theme=settings['theme'] == 'dark')
-    if tape: resize_and_retheme_canvas_drawings()
+    if is_tape_alive(): resize_and_retheme_canvas_drawings()
     close_label.config(fg=entry_box.cget('fg'), bg=result.cget('bg'))
     hide_label.config(fg=entry_box.cget('fg'), bg=result.cget('bg'))
         
@@ -4644,7 +4785,7 @@ def check_theme_or_geometry_change():
     res_val, entry_val = result.get(), entry_box.get()
 
     curr_time = time.time()
-    if tape:
+    if is_tape_alive():
         widget_under_mouse = tape.winfo_containing(tape.winfo_pointerx(), tape.winfo_pointery())
         if widget_under_mouse and widget_under_mouse.winfo_toplevel() == tape:
             tape_creation_time = time.time()
@@ -4661,10 +4802,10 @@ def check_theme_or_geometry_change():
             ctrl_backspace('', no_cut=True)
             main_win.after(20, unbind_left_button)
             example_value = entry_box.get()
-    elif bool(tape) and int(tape_canvas.cget('width')) == 0 and ('абсолютно любое окно закрывают esc и ctrl+w' in (a := tape_info_label.cget('text')) or re.search(r'закрыть окно.* можно правой кнопкой мыши', a)):
+    elif is_tape_alive() and int(tape_canvas.cget('width')) == 0 and ('абсолютно любое окно закрывают esc и ctrl+w' in (a := tape_info_label.cget('text')) or re.search(r'закрыть окно.* можно правой кнопкой мыши', a)):
         if curr_time - tape_creation_time > 15:
             destroy_tape()
-    elif curr_time - tape_creation_time > (1.5, 5)[bool(tape) and int(tape_canvas.cget('width')) == 0 and ' – нажми меня, чтобы поменять местами аргументы логарифмов' in tape_info_label.cget('text')]:
+    elif curr_time - tape_creation_time > (1.5, 5)[is_tape_alive() and int(tape_canvas.cget('width')) == 0 and ' – нажми меня, чтобы поменять местами аргументы логарифмов' in tape_info_label.cget('text')]:
         destroy_tape()
 
     main_win.after((50, 30)[0.49 < curr_time - last_time_round_change < 0.51], check_theme_or_geometry_change)  # проверять каждую двадцатую секунды
@@ -4810,6 +4951,7 @@ def animate_light_letters():
     if not beauty_letter_tape:
         beauty_letter_tape = Toplevel()
         beauty_letter_tape.overrideredirect(True)
+        set_win11_corners(beauty_letter_tape, small=False, show_border=True)
         beauty_letter_tape_canvas = Canvas(beauty_letter_tape, bg=result.cget('bg'), borderwidth=0, highlightthickness=0)
         beauty_letter_tape_canvas.pack(fill="both", expand=True)
 
