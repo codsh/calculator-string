@@ -4957,7 +4957,6 @@ def animate_light_letters():
     main_win.after(59, lambda: ((destroy_beauty_letter_tape(), animate_light_letters()) if coord_x_beauty_shift > WIDTH - WIDTH // 5 else animate_light_letters()))
 
 
-
 def change_greeting():
     create_greeting()
     if not entry_box.get():
