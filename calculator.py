@@ -65,13 +65,13 @@ def create_fake_main_win():
 
 def switch_to_next_window():
     # Прячем калькулятор с экрана: в этот момент Windows находится в шоке и ПРИНУДИТЕЛЬНО отдает фокус и каретку окну, которое было под ним.
-    main_win.after(50, lambda: create_fake_main_win())
-    main_win.after(70, lambda: main_win.withdraw())
+    main_win.after(80, lambda: create_fake_main_win())
+    main_win.after(100, lambda: main_win.withdraw())
     # Через 200 миллисекунд возвращаем калькулятор обратно. Он появится на том же месте, но фокус останется в чужом окне, а каретка там гарантированно активируется!
-    main_win.after(150, lambda: main_win.deiconify())
-    main_win.after(170, lambda: fake_main_win.destroy())
+    main_win.after(180, lambda: main_win.deiconify())
+    main_win.after(200, lambda: fake_main_win.destroy())
     if added_win.focus_displayof():
-        main_win.after(200, lambda: main_win.event_generate('<FocusOut>'))
+        main_win.after(230, lambda: main_win.event_generate('<FocusOut>'))
 
     return 'break'
 
@@ -4013,7 +4013,7 @@ def on_freeing_wheel_button(event, added_win_is_making_query=False):
     if deletion_mode:
         cut_text(key)
         set_del_mode(False)
-    elif time.time() - pushing_wheel_time < 0.3:
+    elif time.time() - pushing_wheel_time < 0.5 and event.x_root == push_wheel_x_coord and event.y_root == push_wheel_y_coord:
         if not added_win_is_making_query:
             close_main_win_with_layout_switching()
         else:
