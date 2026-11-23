@@ -2165,7 +2165,7 @@ def set_focus_from_not_my_application():
 
 
 if draw_animation:
-    main_win.after(10, lambda: set_focus_from_not_my_application())
+    main_win.after(20, lambda: set_focus_from_not_my_application())
         
         
 def set_keyboard_layout_memory():
